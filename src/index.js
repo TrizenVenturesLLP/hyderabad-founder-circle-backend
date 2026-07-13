@@ -3,6 +3,7 @@ import cors from "cors";
 import express from "express";
 import mongoose from "mongoose";
 import rsvpRouter from "./routes/rsvp.js";
+import contactRouter from "./routes/contact.js";
 
 const PORT = Number(process.env.PORT) || 4000;
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -13,10 +14,25 @@ if (!MONGODB_URI) {
   process.exit(1);
 }
 
+function isAllowedOrigin(origin) {
+  const allowed = CORS_ORIGIN.split(",").map((s) => s.trim()).filter(Boolean);
+  if (allowed.includes("*") || allowed.includes(origin)) return true;
+  // Local / LAN origins for phone testing during development
+  return /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$/i.test(
+    origin,
+  );
+}
+
 const app = express();
 app.use(
   cors({
-    origin: CORS_ORIGIN.split(",").map((s) => s.trim()),
+    origin(origin, callback) {
+      if (!origin || isAllowedOrigin(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
   }),
 );
 app.use(express.json({ limit: "100kb" }));
@@ -26,6 +42,7 @@ app.get("/", (_req, res) => {
 });
 
 app.use("/api/rsvp", rsvpRouter);
+app.use("/api/contact", contactRouter);
 
 async function start() {
   await mongoose.connect(MONGODB_URI);
