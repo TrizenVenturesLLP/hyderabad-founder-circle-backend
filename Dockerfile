@@ -13,4 +13,4 @@ ENV HOST=0.0.0.0
 
 EXPOSE 80
 
-CMD ["npm", "start"]
+CMD ["node", "src/index.js"]

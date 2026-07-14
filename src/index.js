@@ -4,14 +4,9 @@ import mongoose from "mongoose";
 import rsvpRouter from "./routes/rsvp.js";
 import contactRouter from "./routes/contact.js";
 
-const PORT = Number(process.env.PORT) || 4000;
-const MONGODB_URI = process.env.MONGODB_URI;
+const PORT = Number(process.env.PORT) || 80;
+const MONGODB_URI = process.env.MONGODB_URI || "";
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "";
-
-if (!MONGODB_URI) {
-  console.error("Missing MONGODB_URI in environment.");
-  process.exit(1);
-}
 
 /** Always allow these production frontends even if CapRover CORS_ORIGIN is outdated. */
 const HARDCODED_ORIGINS = [
@@ -31,7 +26,6 @@ function isAllowedOrigin(origin) {
     .filter(Boolean);
   if (allowed.includes("*") || allowed.includes(origin)) return true;
 
-  // Local / LAN for phone testing
   if (
     /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$/i.test(
       origin,
@@ -40,13 +34,13 @@ function isAllowedOrigin(origin) {
     return true;
   }
 
-  // Any https://*.trizenventures.com
   return /^https:\/\/([a-z0-9-]+\.)*trizenventures\.com$/i.test(origin);
 }
 
 const app = express();
+let mongoReady = false;
 
-// Explicit CORS so OPTIONS preflight always gets the right headers on CapRover
+// Explicit CORS so OPTIONS preflight always gets headers (even during 5xx)
 app.use((req, res, next) => {
   const origin = req.headers.origin;
 
@@ -75,18 +69,70 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "100kb" }));
 
 app.get("/", (_req, res) => {
-  res.json({ service: "hfn-rsvp-backend", status: "ok" });
+  res.json({
+    service: "hfn-rsvp-backend",
+    status: "ok",
+    mongo: mongoReady ? "connected" : "connecting",
+  });
+});
+
+app.get("/health", (_req, res) => {
+  res.status(mongoReady ? 200 : 503).json({
+    ok: mongoReady,
+    mongo: mongoReady ? "connected" : "connecting",
+  });
+});
+
+app.use((req, res, next) => {
+  if (!mongoReady && req.path.startsWith("/api/")) {
+    return res.status(503).json({
+      error: "Database is still connecting. Please try again in a moment.",
+    });
+  }
+  next();
 });
 
 app.use("/api/rsvp", rsvpRouter);
 app.use("/api/contact", contactRouter);
 
+async function connectMongoWithRetry() {
+  if (!MONGODB_URI) {
+    console.error(
+      "Missing MONGODB_URI in environment. Set it in CapRover App Configs.",
+    );
+    return;
+  }
+
+  const maxAttempts = 20;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await mongoose.connect(MONGODB_URI, {
+        serverSelectionTimeoutMS: 10000,
+      });
+      mongoReady = true;
+      console.log("Connected to MongoDB");
+      return;
+    } catch (err) {
+      mongoReady = false;
+      console.error(
+        `MongoDB connect attempt ${attempt}/${maxAttempts} failed:`,
+        err instanceof Error ? err.message : err,
+      );
+      if (attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, Math.min(attempt * 1500, 10000)));
+      }
+    }
+  }
+  console.error("Could not connect to MongoDB after retries. API will stay degraded.");
+}
+
 async function start() {
-  await mongoose.connect(MONGODB_URI);
-  console.log("Connected to MongoDB");
+  // Listen first so CapRover/nginx don't return 502 during Mongo connect
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`RSVP API listening on http://0.0.0.0:${PORT}`);
   });
+
+  await connectMongoWithRetry();
 }
 
 start().catch((err) => {
