@@ -6,16 +6,13 @@ const router = Router();
 
 const ROLES = new Set([
   "Founder / Co-founder",
-  "SDE",
-  "AI Engineer",
-  "AI Intern",
+  "Aspiring entrepreneur",
   "Product Manager",
   "Designer",
   "Operator / Growth",
   "Investor / Ecosystem",
   "Working professional",
   "Student",
-  "Aspiring entrepreneur",
   "Other",
 ]);
 
