@@ -26,6 +26,20 @@ const rsvpSchema = new mongoose.Schema(
     },
     industry: { type: String, required: true, trim: true },
     lookingFor: { type: [String], default: [] },
+    offerCommunity: {
+      type: [String],
+      validate: {
+        validator: (v) => Array.isArray(v) && v.length > 0,
+        message: "Select at least one offer-community option.",
+      },
+    },
+    wantToMeet: {
+      type: [String],
+      validate: {
+        validator: (v) => Array.isArray(v) && v.length > 0,
+        message: "Select at least one want-to-meet option.",
+      },
+    },
     canHelpWith: { type: String, trim: true, default: "" },
     biggestChallenge: { type: String, trim: true, default: "" },
     joinWhatsapp: { type: Boolean, default: false },

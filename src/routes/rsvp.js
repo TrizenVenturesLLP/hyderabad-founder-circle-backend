@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { Rsvp } from "../models/Rsvp.js";
+import { sendRsvpConfirmationEmail } from "../services/emailNotification.js";
 
 const router = Router();
 
@@ -63,6 +64,32 @@ const LOOKING_FOR = new Set([
   "Learning",
 ]);
 
+const OFFER_COMMUNITY = new Set([
+  "Mentorship",
+  "Technical / engineering skills",
+  "AI / ML expertise",
+  "Product / design",
+  "GTM / growth",
+  "Hiring intros",
+  "Investor intros",
+  "Domain expertise",
+  "Feedback / sounding board",
+  "Other",
+]);
+
+const WANT_TO_MEET = new Set([
+  "Founders",
+  "AI builders",
+  "Investors",
+  "Designers",
+  "Operators / growth",
+  "Potential co-founders",
+  "Engineers",
+  "Product managers",
+  "Mentors",
+  "Other",
+]);
+
 const FIELD_LIMITS = {
   name: 80,
   email: 120,
@@ -102,6 +129,8 @@ router.post("/", async (req, res) => {
       leaveWith = [],
       industry,
       lookingFor = [],
+      offerCommunity = [],
+      wantToMeet = [],
       canHelpWith = "",
       biggestChallenge = "",
       joinWhatsapp = false,
@@ -215,6 +244,36 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: "Please select valid looking-for options." });
     }
 
+    const offerCommunityList = Array.isArray(offerCommunity)
+      ? offerCommunity.map((item) => trimStr(item)).filter(Boolean)
+      : [];
+
+    if (offerCommunityList.length === 0) {
+      return res.status(400).json({
+        error: "Please select at least one option for what you can offer the community.",
+      });
+    }
+
+    if (offerCommunityList.some((item) => !OFFER_COMMUNITY.has(item))) {
+      return res
+        .status(400)
+        .json({ error: "Please select valid offer-community options." });
+    }
+
+    const wantToMeetList = Array.isArray(wantToMeet)
+      ? wantToMeet.map((item) => trimStr(item)).filter(Boolean)
+      : [];
+
+    if (wantToMeetList.length === 0) {
+      return res.status(400).json({
+        error: "Please select at least one option for who you would like to meet.",
+      });
+    }
+
+    if (wantToMeetList.some((item) => !WANT_TO_MEET.has(item))) {
+      return res.status(400).json({ error: "Please select valid want-to-meet options." });
+    }
+
     if (
       !event ||
       !isNonEmptyString(event.slug) ||
@@ -244,6 +303,8 @@ router.post("/", async (req, res) => {
       leaveWith: leaveWithList,
       industry: industry.trim(),
       lookingFor: lookingForList,
+      offerCommunity: offerCommunityList,
+      wantToMeet: wantToMeetList,
       canHelpWith: trimStr(canHelpWith),
       biggestChallenge: trimStr(biggestChallenge),
       joinWhatsapp: Boolean(joinWhatsapp),
@@ -259,6 +320,12 @@ router.post("/", async (req, res) => {
         city: event.city.trim(),
         format: event.format.trim(),
       },
+    });
+
+    // Non-blocking confirmation email
+    void sendRsvpConfirmationEmail({
+      rsvp,
+      mapsUrl: typeof event.mapsUrl === "string" ? event.mapsUrl : "",
     });
 
     return res.status(201).json({
