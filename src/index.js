@@ -18,9 +18,15 @@ function isAllowedOrigin(origin) {
   const allowed = CORS_ORIGIN.split(",").map((s) => s.trim()).filter(Boolean);
   if (allowed.includes("*") || allowed.includes(origin)) return true;
   // Local / LAN origins for phone testing during development
-  return /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$/i.test(
-    origin,
-  );
+  if (
+    /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$/i.test(
+      origin,
+    )
+  ) {
+    return true;
+  }
+  // Any trizenventures.com subdomain (community, ty, llp, etc.)
+  return /^https:\/\/([a-z0-9-]+\.)*trizenventures\.com$/i.test(origin);
 }
 
 const app = express();
@@ -31,7 +37,8 @@ app.use(
         callback(null, true);
         return;
       }
-      callback(new Error(`CORS blocked for origin: ${origin}`));
+      console.warn(`CORS blocked for origin: ${origin}`);
+      callback(null, false);
     },
   }),
 );
