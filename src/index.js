@@ -3,6 +3,13 @@ import express from "express";
 import mongoose from "mongoose";
 import rsvpRouter from "./routes/rsvp.js";
 import contactRouter from "./routes/contact.js";
+import eventsRouter from "./routes/events.js";
+import adminAuthRouter from "./routes/admin/auth.js";
+import adminRsvpsRouter from "./routes/admin/rsvps.js";
+import adminContactsRouter from "./routes/admin/contacts.js";
+import adminEventsRouter from "./routes/admin/events.js";
+import adminEmailsRouter from "./routes/admin/emails.js";
+import { seedAdminAndEvents } from "./services/seed.js";
 
 const PORT = Number(process.env.PORT) || 80;
 const MONGODB_URI = process.env.MONGODB_URI || "";
@@ -66,7 +73,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: "100kb" }));
+app.use(express.json({ limit: "8mb" }));
 
 app.get("/", (_req, res) => {
   res.json({
@@ -94,6 +101,12 @@ app.use((req, res, next) => {
 
 app.use("/api/rsvp", rsvpRouter);
 app.use("/api/contact", contactRouter);
+app.use("/api/events", eventsRouter);
+app.use("/api/admin/auth", adminAuthRouter);
+app.use("/api/admin/rsvps", adminRsvpsRouter);
+app.use("/api/admin/contacts", adminContactsRouter);
+app.use("/api/admin/events", adminEventsRouter);
+app.use("/api/admin/emails", adminEmailsRouter);
 
 async function connectMongoWithRetry() {
   if (!MONGODB_URI) {
@@ -111,6 +124,14 @@ async function connectMongoWithRetry() {
       });
       mongoReady = true;
       console.log("Connected to MongoDB");
+      try {
+        await seedAdminAndEvents();
+      } catch (seedErr) {
+        console.error(
+          "[seed] Failed:",
+          seedErr instanceof Error ? seedErr.message : seedErr,
+        );
+      }
       return;
     } catch (err) {
       mongoReady = false;
