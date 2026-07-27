@@ -16,9 +16,15 @@ export async function sendRsvpConfirmationEmail({ rsvp, mapsUrl }) {
   }
 
   const eventSlug = rsvp.event?.slug || "";
-  const eventUrl = eventSlug
-    ? `${WEB_APP_URL.replace(/\/$/, "")}/events/${eventSlug}`
-    : WEB_APP_URL;
+  const base = WEB_APP_URL.replace(/\/$/, "");
+  const eventUrl = eventSlug ? `${base}/events/${eventSlug}` : base;
+  const badgeUrl = eventSlug
+    ? `${base}/badge?event=${encodeURIComponent(eventSlug)}${
+        rsvp.name
+          ? `&name=${encodeURIComponent(String(rsvp.name).trim())}`
+          : ""
+      }`
+    : `${base}/badge`;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
@@ -45,6 +51,7 @@ export async function sendRsvpConfirmationEmail({ rsvp, mapsUrl }) {
           format: rsvp.event?.format,
           mapsUrl: mapsUrl || "",
           eventUrl,
+          badgeUrl,
           supportEmail: "community@trizenventures.com",
         }),
         signal: controller.signal,

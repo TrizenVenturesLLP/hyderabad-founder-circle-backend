@@ -27,7 +27,9 @@ function sanitizePayload(body = {}) {
     format: ["Offline", "Online", "Hybrid"].includes(body.format)
       ? body.format
       : "Offline",
-    status: body.status === "coming-soon" ? "coming-soon" : "open",
+    status: ["open", "coming-soon", "completed"].includes(body.status)
+      ? body.status
+      : "open",
     blurb: String(body.blurb || "").trim(),
     hosts: Array.isArray(body.hosts) ? body.hosts : [],
     speakers: Array.isArray(body.speakers) ? body.speakers : [],

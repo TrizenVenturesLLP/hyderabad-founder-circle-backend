@@ -49,7 +49,7 @@ const eventSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["open", "coming-soon"],
+      enum: ["open", "coming-soon", "completed"],
       default: "open",
     },
     blurb: { type: String, trim: true, default: "" },

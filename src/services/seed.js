@@ -25,7 +25,7 @@ const SEED_EVENTS = [
     dateISO: "2026-07-18",
     dateLabel: "Saturday, 18 July 2026",
     ...venueDefaults,
-    status: "open",
+    status: "completed",
     blurb:
       "The monthly roundtable. Show up, share what you're building, find your people.",
     sortOrder: 0,
