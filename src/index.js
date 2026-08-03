@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import mongoose from "mongoose";
 import rsvpRouter from "./routes/rsvp.js";
+import paymentsRouter from "./routes/payments.js";
 import contactRouter from "./routes/contact.js";
 import eventsRouter from "./routes/events.js";
 import adminAuthRouter from "./routes/admin/auth.js";
@@ -10,6 +11,7 @@ import adminContactsRouter from "./routes/admin/contacts.js";
 import adminEventsRouter from "./routes/admin/events.js";
 import adminEmailsRouter from "./routes/admin/emails.js";
 import { seedAdminAndEvents } from "./services/seed.js";
+import { ensureRsvpIndexes } from "./services/ensureRsvpIndexes.js";
 
 const PORT = Number(process.env.PORT) || 80;
 const MONGODB_URI = process.env.MONGODB_URI || "";
@@ -100,6 +102,7 @@ app.use((req, res, next) => {
 });
 
 app.use("/api/rsvp", rsvpRouter);
+app.use("/api/payments", paymentsRouter);
 app.use("/api/contact", contactRouter);
 app.use("/api/events", eventsRouter);
 app.use("/api/admin/auth", adminAuthRouter);
@@ -124,6 +127,14 @@ async function connectMongoWithRetry() {
       });
       mongoReady = true;
       console.log("Connected to MongoDB");
+      try {
+        await ensureRsvpIndexes();
+      } catch (indexErr) {
+        console.error(
+          "[rsvp-indexes] Failed:",
+          indexErr instanceof Error ? indexErr.message : indexErr,
+        );
+      }
       try {
         await seedAdminAndEvents();
       } catch (seedErr) {

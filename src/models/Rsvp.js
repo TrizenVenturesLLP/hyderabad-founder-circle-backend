@@ -55,10 +55,25 @@ const rsvpSchema = new mongoose.Schema(
       city: { type: String, required: true },
       format: { type: String, required: true },
     },
+    payment: {
+      status: {
+        type: String,
+        enum: ["unpaid", "paid", "failed"],
+        default: "unpaid",
+      },
+      amountInr: { type: Number, default: 0 },
+      amountPaise: { type: Number, default: 0 },
+      currency: { type: String, default: "INR" },
+      method: { type: String, trim: true, default: "" },
+      razorpayOrderId: { type: String, trim: true, default: "" },
+      razorpayPaymentId: { type: String, trim: true, default: "" },
+      razorpaySignature: { type: String, trim: true, default: "" },
+      paidAt: { type: Date },
+    },
   },
   { timestamps: true },
 );
 
-rsvpSchema.index({ email: 1, "event.slug": 1 }, { unique: true });
+rsvpSchema.index({ email: 1, "event.slug": 1 }, { unique: true, name: "email_event_slug_unique" });
 
 export const Rsvp = mongoose.model("Rsvp", rsvpSchema);
