@@ -16,6 +16,13 @@ const DEFAULT_MAPS_URL =
   process.env.DEFAULT_MAPS_URL ||
   "https://maps.app.goo.gl/KTRvgep4y9ciSCjSA?g_st=com.microsoft.skype.teams.extshare";
 
+function publicEventDateLabel(eventDoc, fallback = "") {
+  if (eventDoc?.status === "completed" || eventDoc?.dateConfirmed === true) {
+    return eventDoc?.dateLabel || fallback;
+  }
+  return "Date to be confirmed";
+}
+
 function formatFetchError(err) {
   if (!(err instanceof Error)) return String(err);
   const cause =
@@ -119,6 +126,7 @@ export async function sendRsvpConfirmationEmail({ rsvp, mapsUrl }) {
   let space = "";
   let address = "";
   let resolvedMapsUrl = typeof mapsUrl === "string" ? mapsUrl.trim() : "";
+  let dateLabel = rsvp.event?.dateLabel;
 
   if (eventSlug) {
     try {
@@ -128,6 +136,7 @@ export async function sendRsvpConfirmationEmail({ rsvp, mapsUrl }) {
         space = eventDoc.space || "";
         address = eventDoc.address || "";
         if (!resolvedMapsUrl) resolvedMapsUrl = eventDoc.mapsUrl || "";
+        dateLabel = publicEventDateLabel(eventDoc, dateLabel);
       }
     } catch (err) {
       console.warn("[email] Could not enrich event details:", err instanceof Error ? err.message : err);
@@ -140,7 +149,7 @@ export async function sendRsvpConfirmationEmail({ rsvp, mapsUrl }) {
     name: rsvp.name,
     eventSlug,
     eventTitle: rsvp.event?.title,
-    dateLabel: rsvp.event?.dateLabel,
+    dateLabel,
     time: rsvp.event?.time,
     venue: rsvp.event?.venue,
     space,
@@ -198,6 +207,17 @@ export async function sendInvoiceEmailNotification({ rsvp }) {
   const invoiceDate = payment?.paidAt ? new Date(payment.paidAt) : new Date();
   const amountInr = payment?.amountInr || 0;
   const eventSlug = rsvp.event?.slug || "";
+  let eventDate = rsvp.event?.dateLabel || "";
+
+  if (eventSlug) {
+    try {
+      const { Event } = await import("../models/Event.js");
+      const eventDoc = await Event.findOne({ slug: eventSlug }).lean();
+      if (eventDoc) eventDate = publicEventDateLabel(eventDoc, eventDate);
+    } catch (err) {
+      console.warn("[email] Could not resolve invoice event date:", err instanceof Error ? err.message : err);
+    }
+  }
 
   const serviceBody = {
     email: rsvp.email,
@@ -207,7 +227,7 @@ export async function sendInvoiceEmailNotification({ rsvp }) {
     invoiceDate: invoiceDate.toISOString(),
     eventTitle: rsvp.event?.title || "",
     eventSlug,
-    eventDate: rsvp.event?.dateLabel || "",
+    eventDate,
     eventTime: rsvp.event?.time || "",
     eventVenue: [rsvp.event?.venue, rsvp.event?.city].filter(Boolean).join(", "),
     razorpayPaymentId: payment?.razorpayPaymentId || "",
@@ -240,7 +260,7 @@ export async function sendInvoiceEmailNotification({ rsvp }) {
       invoiceNumber,
       invoiceDate,
       eventTitle: rsvp.event?.title || "",
-      eventDate: rsvp.event?.dateLabel || "",
+      eventDate,
       eventTime: rsvp.event?.time || "",
       eventVenue: [rsvp.event?.venue, rsvp.event?.city].filter(Boolean).join(", "),
       razorpayPaymentId: payment?.razorpayPaymentId || "",

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { Rsvp } from "../../models/Rsvp.js";
 import { EmailLog } from "../../models/EmailLog.js";
 import { requireAdmin } from "../../middleware/auth.js";
+import { Event } from "../../models/Event.js";
 import { sendCustomEmails } from "../../services/emailNotification.js";
 
 const router = Router();
@@ -39,19 +40,34 @@ router.post("/reminder", async (req, res) => {
       return res.status(404).json({ error: "No matching registrations found." });
     }
 
+    const slugs = [
+      ...new Set(rsvps.map((r) => r.event?.slug).filter(Boolean)),
+    ];
+    const events = await Event.find({ slug: { $in: slugs } })
+      .select("slug status dateConfirmed dateLabel")
+      .lean();
+    const eventBySlug = Object.fromEntries(events.map((e) => [e.slug, e]));
+
     const results = await sendCustomEmails({
       subject,
       body,
-      recipients: rsvps.map((r) => ({
-        email: r.email,
-        name: r.name,
-        company: r.company || "",
-        eventTitle: r.event?.title || "",
-        eventDate: r.event?.dateLabel || "",
-        eventTime: r.event?.time || "",
-        venue: r.event?.venue || "",
-        rsvpId: String(r._id),
-      })),
+      recipients: rsvps.map((r) => {
+        const eventDoc = eventBySlug[r.event?.slug];
+        const eventDate =
+          eventDoc?.status === "completed" || eventDoc?.dateConfirmed === true
+            ? r.event?.dateLabel || eventDoc?.dateLabel || ""
+            : "Date to be confirmed";
+        return {
+          email: r.email,
+          name: r.name,
+          company: r.company || "",
+          eventTitle: r.event?.title || "",
+          eventDate,
+          eventTime: r.event?.time || "",
+          venue: r.event?.venue || "",
+          rsvpId: String(r._id),
+        };
+      }),
       attachments,
     });
 

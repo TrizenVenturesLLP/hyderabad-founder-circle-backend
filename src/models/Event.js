@@ -33,6 +33,7 @@ const eventSchema = new mongoose.Schema(
     title: { type: String, required: true, trim: true },
     dateISO: { type: String, required: true, trim: true },
     dateLabel: { type: String, required: true, trim: true },
+    dateConfirmed: { type: Boolean, default: false },
     time: { type: String, required: true, trim: true },
     venue: { type: String, required: true, trim: true },
     space: { type: String, trim: true, default: "" },

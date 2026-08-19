@@ -15,6 +15,7 @@ function sanitizePayload(body = {}) {
     title: String(body.title || "").trim(),
     dateISO: String(body.dateISO || "").trim(),
     dateLabel: String(body.dateLabel || "").trim(),
+    dateConfirmed: body.dateConfirmed === true,
     time: String(body.time || "").trim(),
     venue: String(body.venue || "").trim(),
     space: String(body.space || "").trim(),

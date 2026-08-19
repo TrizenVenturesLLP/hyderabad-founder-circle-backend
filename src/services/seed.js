@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { Admin } from "../models/Admin.js";
 import { Event } from "../models/Event.js";
+import { Rsvp } from "../models/Rsvp.js";
 
 const venueDefaults = {
   time: "11:00 AM – 1:00 PM",
@@ -24,6 +25,7 @@ const SEED_EVENTS = [
     title: "Hyderabad Founders Network – July",
     dateISO: "2026-07-18",
     dateLabel: "Saturday, 18 July 2026",
+    dateConfirmed: true,
     ...venueDefaults,
     status: "completed",
     blurb:
@@ -62,8 +64,9 @@ const SEED_EVENTS = [
   {
     slug: "hyderabad-founders-network-august",
     title: "Hyderabad Founders Network – August Community Meetup",
-    dateISO: "2026-08-18",
-    dateLabel: "Saturday, 18 August 2026",
+    dateISO: "2026-08-22",
+    dateLabel: "Saturday, 22 August 2026",
+    dateConfirmed: false,
     ...venueDefaults,
     status: "open",
     blurb:
@@ -77,6 +80,7 @@ const SEED_EVENTS = [
     title: "Hyderabad Founders Network – September Community Meetup",
     dateISO: "2026-09-19",
     dateLabel: "Saturday, 19 September 2026",
+    dateConfirmed: false,
     ...venueDefaults,
     status: "coming-soon",
     blurb: "Themed session: going from first 10 to first 100 customers.",
@@ -111,9 +115,40 @@ export async function seedAdminAndEvents() {
     } else if (event.slug === "hyderabad-founders-network-july") {
       await Event.updateOne(
         { slug: event.slug },
-        { $set: { speakers: event.speakers } },
+        { $set: { speakers: event.speakers, dateConfirmed: true } },
       );
       console.log(`[seed] Updated speakers for: ${event.slug}`);
+    } else {
+      await Event.updateOne(
+        { slug: event.slug },
+        { $set: { dateConfirmed: event.dateConfirmed === true } },
+      );
+      console.log(`[seed] Date confirmation for ${event.slug}: ${event.dateConfirmed === true}`);
+    }
+    if (event.slug === "hyderabad-founders-network-august") {
+      await Event.updateOne(
+        { slug: event.slug },
+        {
+          $set: {
+            dateISO: event.dateISO,
+            dateLabel: event.dateLabel,
+            dateConfirmed: false,
+          },
+        },
+      );
+      const rsvpUpdate = await Rsvp.updateMany(
+        { "event.slug": event.slug },
+        {
+          $set: {
+            "event.dateISO": event.dateISO,
+            "event.dateLabel": event.dateLabel,
+          },
+        },
+      );
+      console.log(`[seed] Updated date for: ${event.slug}`);
+      console.log(
+        `[seed] Synced RSVP dates for ${event.slug}: modified=${rsvpUpdate.modifiedCount}`,
+      );
     }
   }
 }
