@@ -1,7 +1,6 @@
 import bcrypt from "bcryptjs";
 import { Admin } from "../models/Admin.js";
 import { Event } from "../models/Event.js";
-import { Rsvp } from "../models/Rsvp.js";
 
 const venueDefaults = {
   time: "11:00 AM – 1:00 PM",
@@ -16,6 +15,21 @@ const venueDefaults = {
     "https://www.google.com/maps?q=DraperU+India+Gachibowli+Hyderabad&output=embed",
   city: "Hyderabad",
   seats: 40,
+  format: "Offline",
+};
+
+const nanoSpaceVenue = {
+  time: "10:30 AM – 1:00 PM",
+  venue: "NanoSpace Coworking",
+  space: "Nanakramguda Branch",
+  area: "Nanakramguda",
+  address: "NanoSpace Coworking, Nanakramguda, Hyderabad, Telangana",
+  mapsUrl:
+    "https://www.google.com/maps/search/?api=1&query=NanoSpace+Coworking+Nanakramguda+Branch+Hyderabad",
+  mapsEmbedUrl:
+    "https://www.google.com/maps?q=NanoSpace+Coworking+Nanakramguda+Branch+Hyderabad&output=embed",
+  city: "Hyderabad",
+  seats: 50,
   format: "Offline",
 };
 
@@ -62,31 +76,38 @@ const SEED_EVENTS = [
     ],
   },
   {
-    slug: "hyderabad-founders-network-august",
-    title: "Hyderabad Founders Network – August Community Meetup",
-    dateISO: "2026-08-22",
-    dateLabel: "Saturday, 22 August 2026",
-    dateConfirmed: false,
-    ...venueDefaults,
+    slug: "hyderabad-founders-network-september",
+    title: "Hyderabad Founders Network – September",
+    dateISO: "2026-09-05",
+    dateLabel: "Saturday, 5 September 2026",
+    dateConfirmed: true,
+    ...nanoSpaceVenue,
     status: "open",
     blurb:
-      "Connect with founders, builders, startup operators, mentors and aspiring entrepreneurs for meaningful conversations and long-term relationships.",
-    sortOrder: 1,
+      "Building a stronger founder community in Hyderabad. Connect · Learn · Collaborate · Grow.",
+    sortOrder: 0,
     published: true,
-    speakers: [],
-  },
-  {
-    slug: "hyderabad-founders-network-september",
-    title: "Hyderabad Founders Network – September Community Meetup",
-    dateISO: "2026-09-19",
-    dateLabel: "Saturday, 19 September 2026",
-    dateConfirmed: false,
-    ...venueDefaults,
-    status: "coming-soon",
-    blurb: "Themed session: going from first 10 to first 100 customers.",
-    sortOrder: 2,
-    published: true,
-    speakers: [],
+    speakers: [
+      {
+        name: "Sree Keerthana Gorty",
+        role: "Senior Business Analyst, Rockwell Automation",
+        org: "Top 1% Topmate Mentor · Creator of KrunchyAITalks",
+        badge: "Featured Speaker",
+        bio: "12+ years in the software industry. Session: AI, Talent & the Future of Work — 30-minute talk + audience Q&A. Focus: AI · Careers · Technology · Mentoring.",
+        photo: "Sree-Keerthana-Gorty",
+        linkedin: "https://www.linkedin.com/in/sreekeerthanagorty/",
+      },
+      {
+        name: "Raffi Shaik",
+        role: "Founder & CEO, NanoSpace",
+        org: "Lawyer · Author · Entrepreneur",
+        badge: "Behind the Build",
+        bio: "Lawyer, author and entrepreneur behind NanoSpace. Session: Behind the Build — Founder Story — 20-minute talk on the real founder journey. Focus: Coworking · Scaling · Challenges · Lessons.",
+        photo: "Raffi-Shaik",
+        linkedin: "https://www.linkedin.com/company/nanospace-coworking/",
+        website: "https://nanospace.in/",
+      },
+    ],
   },
 ];
 
@@ -125,30 +146,21 @@ export async function seedAdminAndEvents() {
       );
       console.log(`[seed] Date confirmation for ${event.slug}: ${event.dateConfirmed === true}`);
     }
-    if (event.slug === "hyderabad-founders-network-august") {
+    if (event.slug === "hyderabad-founders-network-september") {
+      const { slug, sortOrder, published, ...septemberFields } = event;
       await Event.updateOne(
         { slug: event.slug },
-        {
-          $set: {
-            dateISO: event.dateISO,
-            dateLabel: event.dateLabel,
-            dateConfirmed: false,
-          },
-        },
+        { $set: { ...septemberFields, speakers: event.speakers } },
       );
-      const rsvpUpdate = await Rsvp.updateMany(
-        { "event.slug": event.slug },
-        {
-          $set: {
-            "event.dateISO": event.dateISO,
-            "event.dateLabel": event.dateLabel,
-          },
-        },
-      );
-      console.log(`[seed] Updated date for: ${event.slug}`);
-      console.log(
-        `[seed] Synced RSVP dates for ${event.slug}: modified=${rsvpUpdate.modifiedCount}`,
-      );
+      console.log(`[seed] Updated September meetup: ${event.slug}`);
     }
+  }
+
+  const augustUnpublish = await Event.updateOne(
+    { slug: "hyderabad-founders-network-august" },
+    { $set: { published: false } },
+  );
+  if (augustUnpublish.matchedCount > 0) {
+    console.log("[seed] Unpublished August meetup (removed from public listings)");
   }
 }

@@ -10,6 +10,7 @@ import {
   REGISTRATION_FEE_PAISE,
   verifyPaymentSignature,
 } from "../lib/razorpay.js";
+import { isRoleAllowed } from "../lib/eventConfig.js";
 
 const router = Router();
 
@@ -198,6 +199,11 @@ function validateRegistrationBody(body) {
 
   if (!ROLES.has(role.trim())) {
     return { error: "Please select a valid role." };
+  }
+
+  const eventSlug = trimStr(event?.slug);
+  if (eventSlug && !isRoleAllowed(eventSlug, role)) {
+    return { error: "Please select a valid role for this event." };
   }
 
   if (!STARTUP_STAGES.has(startupStage.trim())) {

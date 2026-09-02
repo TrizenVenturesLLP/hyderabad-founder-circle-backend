@@ -1,7 +1,7 @@
 import Razorpay from "razorpay";
 import crypto from "crypto";
 
-export const REGISTRATION_FEE_INR = 49;
+export const REGISTRATION_FEE_INR = 99;
 export const REGISTRATION_FEE_PAISE = REGISTRATION_FEE_INR * 100;
 
 export function getRazorpayClient() {

@@ -9,7 +9,7 @@ const router = Router();
 router.post("/", async (_req, res) => {
   return res.status(400).json({
     error:
-      "Registration requires a ₹49 payment. Please complete checkout to reserve your seat.",
+      "Registration requires a ₹99 payment. Please complete checkout to reserve your seat.",
   });
 });
 
