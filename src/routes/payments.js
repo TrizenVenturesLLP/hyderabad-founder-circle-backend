@@ -106,9 +106,23 @@ const FIELD_LIMITS = {
   canHelpWith: 400,
   biggestChallenge: 400,
   questions: 400,
+  heardAboutEventOther: 120,
 };
 
 const PAYMENT_METHODS = new Set(["upi", "card", "netbanking", "wallet"]);
+
+const HEARD_ABOUT_EVENT = new Set([
+  "Trizen Community",
+  "ExtraHand",
+  "NanoSpace Coworking",
+  "Samriddhi Anveshana",
+  "Bestverse",
+  "LinkedINspire",
+  "LinkedIn",
+  "Instagram",
+  "WhatsApp",
+  "Other",
+]);
 
 function isNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
@@ -143,6 +157,8 @@ function validateRegistrationBody(body) {
     joinWhatsapp = false,
     subscribeUpdates = false,
     questions = "",
+    heardAboutEvent = "",
+    heardAboutEventOther = "",
     event,
   } = body ?? {};
 
@@ -195,6 +211,23 @@ function validateRegistrationBody(body) {
   }
   if (trimStr(questions).length > FIELD_LIMITS.questions) {
     return { error: "Questions answer is too long." };
+  }
+
+  const heardAbout = trimStr(heardAboutEvent);
+  if (!heardAbout || !HEARD_ABOUT_EVENT.has(heardAbout)) {
+    return { error: "Please select how you heard about this event." };
+  }
+
+  const heardAboutOther = trimStr(heardAboutEventOther);
+  if (heardAbout === "Other") {
+    if (!heardAboutOther) {
+      return { error: "Please tell us how you heard about this event." };
+    }
+    if (heardAboutOther.length > FIELD_LIMITS.heardAboutEventOther) {
+      return { error: "That answer is too long." };
+    }
+  } else if (heardAboutOther.length > FIELD_LIMITS.heardAboutEventOther) {
+    return { error: "That answer is too long." };
   }
 
   if (!ROLES.has(role.trim())) {
@@ -319,6 +352,8 @@ function validateRegistrationBody(body) {
       joinWhatsapp: Boolean(joinWhatsapp),
       subscribeUpdates: Boolean(subscribeUpdates),
       questions: trimStr(questions),
+      heardAboutEvent: heardAbout,
+      heardAboutEventOther: heardAbout === "Other" ? heardAboutOther : "",
       event: {
         slug: event.slug.trim(),
         title: event.title.trim(),
@@ -465,6 +500,8 @@ router.post("/verify", async (req, res) => {
       joinWhatsapp: data.joinWhatsapp,
       subscribeUpdates: data.subscribeUpdates,
       questions: data.questions,
+      heardAboutEvent: data.heardAboutEvent,
+      heardAboutEventOther: data.heardAboutEventOther,
       event: data.event,
       payment: {
         status: "paid",

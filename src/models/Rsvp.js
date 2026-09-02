@@ -45,6 +45,8 @@ const rsvpSchema = new mongoose.Schema(
     joinWhatsapp: { type: Boolean, default: false },
     subscribeUpdates: { type: Boolean, default: false },
     questions: { type: String, trim: true, default: "" },
+    heardAboutEvent: { type: String, trim: true, default: "" },
+    heardAboutEventOther: { type: String, trim: true, default: "" },
     event: {
       slug: { type: String, required: true },
       title: { type: String, required: true },
