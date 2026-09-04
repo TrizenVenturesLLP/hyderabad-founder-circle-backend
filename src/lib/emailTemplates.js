@@ -11,6 +11,110 @@ function esc(value) {
     .replace(/"/g, "&quot;");
 }
 
+/** True when the body is already full HTML (admin pasted a template). */
+export function looksLikeHtmlEmail(body) {
+  const t = String(body || "").trim();
+  return (
+    /^<!DOCTYPE\b/i.test(t) ||
+    /^<html[\s>]/i.test(t) ||
+    /^<(?:div|table|section|article|p|h[1-6]|br|span|strong|em)\b/i.test(t)
+  );
+}
+
+/**
+ * Convert structured plain text / light markdown into email-safe HTML.
+ * Preserves blank lines as paragraphs, single newlines as <br>,
+ * **bold**, [label](url), and bare https:// links.
+ */
+export function formatStructuredBodyToHtml(raw) {
+  let text = esc(raw).replace(/\r\n/g, "\n");
+
+  // Markdown links: [label](https://...)
+  text = text.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gi,
+    '<a href="$2" style="color:#c46a3a;text-decoration:underline;word-break:break-all;">$1</a>',
+  );
+
+  // Bare URLs (skip ones already inside href=")
+  text = text.replace(
+    /(^|[\s>(])((https?:\/\/)[^\s<]+)/gi,
+    (match, prefix, url) => {
+      const clean = url.replace(/[),.;!?]+$/, "");
+      const trailing = url.slice(clean.length);
+      return `${prefix}<a href="${clean}" style="color:#c46a3a;text-decoration:underline;word-break:break-all;">${clean}</a>${trailing}`;
+    },
+  );
+
+  // Bold: **text**
+  text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+
+  const paragraphs = text
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .map(
+      (block) =>
+        `<p style="margin:0 0 14px;color:#374151;font-size:15px;line-height:1.65;">${block.replace(/\n/g, "<br>")}</p>`,
+    )
+    .join("");
+
+  return paragraphs || `<p style="margin:0;color:#374151;font-size:15px;line-height:1.65;"></p>`;
+}
+
+/**
+ * Branded wrapper used for admin reminder / announcement emails so structure
+ * renders consistently across Gmail, Outlook, and Apple Mail.
+ */
+export function wrapAdminEmailHtml({ title = "Hyderabad Founders Network", bodyHtml }) {
+  const heading = esc(title);
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>${heading}</title></head>
+<body style="margin:0;padding:0;background:#f4f1ea;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f1ea;padding:32px 16px;">
+<tr><td align="center">
+<table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.08);">
+<tr><td style="background:#1f1a17;color:#fff;padding:14px 24px;font-size:13px;letter-spacing:.08em;text-align:center;text-transform:uppercase;">Hyderabad Founders Network</td></tr>
+<tr><td style="padding:28px 32px 8px;">
+${bodyHtml}
+</td></tr>
+<tr><td style="padding:16px 24px 22px;text-align:center;border-top:1px solid #eee7dc;color:#9a9188;font-size:12px;line-height:1.5;">
+  Community-owned · Supported by Trizen Ventures<br>
+  <a href="mailto:community@trizenventures.com" style="color:#c46a3a;text-decoration:none;">community@trizenventures.com</a>
+  · +91 86396 48822
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>`;
+}
+
+/**
+ * Build a reminder email from structured plain text (or pass-through HTML).
+ */
+export function buildAdminCustomEmail({ subject, body }) {
+  const htmlBody = looksLikeHtmlEmail(body)
+    ? String(body)
+    : wrapAdminEmailHtml({
+        title: subject || "Hyderabad Founders Network",
+        bodyHtml: formatStructuredBodyToHtml(body),
+      });
+
+  const text = looksLikeHtmlEmail(body)
+    ? String(body)
+        .replace(/<br\s*\/?>/gi, "\n")
+        .replace(/<\/p>/gi, "\n")
+        .replace(/<[^>]+>/g, "")
+        .trim()
+    : String(body)
+        .replace(/\*\*([^*]+)\*\*/g, "$1")
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gi, "$1 ($2)")
+        .trim();
+
+  return { subject: String(subject || "").trim(), html: htmlBody, text };
+}
+
 // ── Registration Confirmation ─────────────────────────────────────────────────
 
 export function buildRsvpConfirmationEmail(data) {

@@ -2,6 +2,7 @@ import { sendDirectMail } from "../lib/mailer.js";
 import {
   buildRsvpConfirmationEmail,
   buildInvoiceEmail,
+  buildAdminCustomEmail,
 } from "../lib/emailTemplates.js";
 import { generateInvoicePdf } from "../lib/invoicePdf.js";
 
@@ -311,13 +312,23 @@ export async function sendCustomEmails({ subject, body, recipients, attachments 
       eventDate: recipient.eventDate || "",
       eventTime: recipient.eventTime || "",
       venue: recipient.venue || "",
+      address: recipient.address || "",
+      mapsUrl: recipient.mapsUrl || "",
+      eventUrl: recipient.eventUrl || "",
+      whatsappUrl: recipient.whatsappUrl || COMMUNITY_WHATSAPP_URL,
+      communityUrl: recipient.whatsappUrl || COMMUNITY_WHATSAPP_URL,
+      supportEmail: recipient.supportEmail || "community@trizenventures.com",
+      supportPhone: recipient.supportPhone || "+91 86396 48822",
     };
 
     const personalizedSubject = applyEmailTemplate(subject, vars);
     const personalizedBody = applyEmailTemplate(body, vars);
-    const html = personalizedBody.includes("<")
-      ? personalizedBody
-      : `<div style="font-family:sans-serif;line-height:1.6;white-space:pre-wrap">${escapeHtml(personalizedBody)}</div>`;
+    // Always convert structured plain text into proper HTML paragraphs/bold/links
+    // so Gmail/Outlook keep the layout the admin typed.
+    const rendered = buildAdminCustomEmail({
+      subject: personalizedSubject,
+      body: personalizedBody,
+    });
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20000);
@@ -335,9 +346,9 @@ export async function sendCustomEmails({ subject, body, recipients, attachments 
           body: JSON.stringify({
             to: recipient.email,
             name: recipient.name,
-            subject: personalizedSubject,
-            html,
-            text: stripHtml(personalizedBody),
+            subject: rendered.subject,
+            html: rendered.html,
+            text: rendered.text,
             attachments: attachments.map((a) => ({
               filename: a.filename,
               contentType: a.contentType || "application/octet-stream",
@@ -363,20 +374,4 @@ export async function sendCustomEmails({ subject, body, recipients, attachments 
   }
 
   return results;
-}
-
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function stripHtml(str) {
-  return String(str)
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .trim();
 }

@@ -24,8 +24,7 @@ const nanoSpaceVenue = {
   space: "Nanakramguda Branch",
   area: "Nanakramguda",
   address: "NanoSpace Coworking, Nanakramguda, Hyderabad, Telangana",
-  mapsUrl:
-    "https://www.google.com/maps/search/?api=1&query=NanoSpace+Coworking+Nanakramguda+Branch+Hyderabad",
+  mapsUrl: "https://share.google/sRNjvPbJCCaQRIYrB",
   mapsEmbedUrl:
     "https://www.google.com/maps?q=NanoSpace+Coworking+Nanakramguda+Branch+Hyderabad&output=embed",
   city: "Hyderabad",

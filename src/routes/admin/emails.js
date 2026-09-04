@@ -44,9 +44,16 @@ router.post("/reminder", async (req, res) => {
       ...new Set(rsvps.map((r) => r.event?.slug).filter(Boolean)),
     ];
     const events = await Event.find({ slug: { $in: slugs } })
-      .select("slug status dateConfirmed dateLabel")
+      .select("slug status dateConfirmed dateLabel address mapsUrl venue time title")
       .lean();
     const eventBySlug = Object.fromEntries(events.map((e) => [e.slug, e]));
+    const webBase = (process.env.WEB_APP_URL || "https://community.trizenventures.com").replace(
+      /\/$/,
+      "",
+    );
+    const whatsappUrl =
+      process.env.COMMUNITY_WHATSAPP_URL ||
+      "https://chat.whatsapp.com/HaoiMStGYdg5J5dF5lh9NQ?mode=gi_t";
 
     const results = await sendCustomEmails({
       subject,
@@ -57,14 +64,21 @@ router.post("/reminder", async (req, res) => {
           eventDoc?.status === "completed" || eventDoc?.dateConfirmed === true
             ? r.event?.dateLabel || eventDoc?.dateLabel || ""
             : "Date to be confirmed";
+        const slug = r.event?.slug || eventDoc?.slug || "";
         return {
           email: r.email,
           name: r.name,
           company: r.company || "",
-          eventTitle: r.event?.title || "",
+          eventTitle: r.event?.title || eventDoc?.title || "",
           eventDate,
-          eventTime: r.event?.time || "",
-          venue: r.event?.venue || "",
+          eventTime: r.event?.time || eventDoc?.time || "",
+          venue: r.event?.venue || eventDoc?.venue || "",
+          address: eventDoc?.address || "",
+          mapsUrl: eventDoc?.mapsUrl || "",
+          eventUrl: slug ? `${webBase}/events/${slug}` : webBase,
+          whatsappUrl,
+          supportEmail: "community@trizenventures.com",
+          supportPhone: "+91 86396 48822",
           rsvpId: String(r._id),
         };
       }),
