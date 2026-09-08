@@ -60,13 +60,16 @@ const rsvpSchema = new mongoose.Schema(
     payment: {
       status: {
         type: String,
-        enum: ["unpaid", "paid", "failed"],
+        enum: ["unpaid", "paid", "failed", "pending_review"],
         default: "unpaid",
       },
       amountInr: { type: Number, default: 0 },
       amountPaise: { type: Number, default: 0 },
       currency: { type: String, default: "INR" },
       method: { type: String, trim: true, default: "" },
+      provider: { type: String, trim: true, default: "" },
+      proofUrl: { type: String, trim: true, default: "" },
+      note: { type: String, trim: true, default: "" },
       razorpayOrderId: { type: String, trim: true, default: "" },
       razorpayPaymentId: { type: String, trim: true, default: "" },
       razorpaySignature: { type: String, trim: true, default: "" },

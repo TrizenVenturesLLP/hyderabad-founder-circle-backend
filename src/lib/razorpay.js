@@ -4,8 +4,8 @@ import crypto from "crypto";
 export const REGISTRATION_FEE_INR = 99;
 export const REGISTRATION_FEE_PAISE = REGISTRATION_FEE_INR * 100;
 
-export function getRazorpayClient() {
-  const keyId = process.env.RAZORPAY_KEY_ID?.trim();
+export function getRazorpayClient(keyIdOverride = "") {
+  const keyId = (keyIdOverride || process.env.RAZORPAY_KEY_ID || "").trim();
   const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
 
   if (!keyId || !keySecret) {

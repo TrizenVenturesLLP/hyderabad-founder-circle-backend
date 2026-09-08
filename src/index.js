@@ -10,6 +10,8 @@ import adminRsvpsRouter from "./routes/admin/rsvps.js";
 import adminContactsRouter from "./routes/admin/contacts.js";
 import adminEventsRouter from "./routes/admin/events.js";
 import adminEmailsRouter from "./routes/admin/emails.js";
+import adminOrgApplicationsRouter from "./routes/admin/orgApplications.js";
+import orgApplicationsRouter from "./routes/orgApplications.js";
 import { seedAdminAndEvents } from "./services/seed.js";
 import { ensureRsvpIndexes } from "./services/ensureRsvpIndexes.js";
 
@@ -110,6 +112,8 @@ app.use("/api/admin/rsvps", adminRsvpsRouter);
 app.use("/api/admin/contacts", adminContactsRouter);
 app.use("/api/admin/events", adminEventsRouter);
 app.use("/api/admin/emails", adminEmailsRouter);
+app.use("/api/admin/org-applications", adminOrgApplicationsRouter);
+app.use("/api/org-applications", orgApplicationsRouter);
 
 async function connectMongoWithRetry() {
   if (!MONGODB_URI) {

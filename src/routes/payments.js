@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { Rsvp } from "../models/Rsvp.js";
+import { Event } from "../models/Event.js";
 import {
   sendRsvpConfirmationEmail,
   sendInvoiceEmailNotification,
@@ -7,9 +8,9 @@ import {
 import {
   getRazorpayClient,
   REGISTRATION_FEE_INR,
-  REGISTRATION_FEE_PAISE,
   verifyPaymentSignature,
 } from "../lib/razorpay.js";
+import { publicPaymentConfig } from "../lib/eventPayment.js";
 import { isRoleAllowed } from "../lib/eventConfig.js";
 
 const router = Router();
@@ -110,6 +111,13 @@ const FIELD_LIMITS = {
 };
 
 const PAYMENT_METHODS = new Set(["upi", "card", "netbanking", "wallet"]);
+const MANUAL_PROVIDERS = new Set([
+  "upi_qr",
+  "upi_id",
+  "payment_link",
+  "qiyu",
+  "other",
+]);
 
 const HEARD_ABOUT_EVENT = new Set([
   "Trizen Community",
@@ -134,6 +142,16 @@ function isValidEmail(email) {
 
 function trimStr(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+async function loadEventPayment(eventSlug) {
+  const slug = trimStr(eventSlug).toLowerCase();
+  if (!slug) return { eventDoc: null, payment: publicPaymentConfig(null) };
+  const eventDoc = await Event.findOne({ slug }).lean();
+  return {
+    eventDoc,
+    payment: publicPaymentConfig(eventDoc?.payment, REGISTRATION_FEE_INR),
+  };
 }
 
 function validateRegistrationBody(body) {
@@ -370,15 +388,37 @@ function validateRegistrationBody(body) {
   };
 }
 
-router.get("/config", (_req, res) => {
+router.get("/config", async (req, res) => {
   try {
-    const { keyId } = getRazorpayClient();
+    const eventSlug = trimStr(req.query.eventSlug);
+    const { payment } = await loadEventPayment(eventSlug);
+
+    let keyId = "";
+    if (payment.hasRazorpay || payment.checkoutMode === "razorpay") {
+      try {
+        const razorpayMethod = payment.methods.find((m) => m.type === "razorpay");
+        const client = getRazorpayClient(razorpayMethod?.razorpayKeyId || "");
+        keyId = client.keyId;
+      } catch {
+        if (!payment.hasManualMethods) {
+          return res.status(503).json({
+            error: "Payment is temporarily unavailable. Please try again later.",
+          });
+        }
+      }
+    }
+
     return res.json({
       keyId,
-      amountInr: REGISTRATION_FEE_INR,
-      amountPaise: REGISTRATION_FEE_PAISE,
-      currency: "INR",
+      amountInr: payment.amountInr,
+      amountPaise: payment.amountPaise,
+      currency: payment.currency,
       ticketName: "Event Pass",
+      checkoutMode: payment.checkoutMode,
+      methods: payment.methods,
+      hasRazorpay: payment.hasRazorpay,
+      hasManualMethods: payment.hasManualMethods,
+      enabled: payment.enabled,
     });
   } catch (err) {
     console.error("Payment config failed:", err);
@@ -413,12 +453,25 @@ router.post("/create-order", async (req, res) => {
       });
     }
 
-    const { keyId, client } = getRazorpayClient();
+    const { payment } = await loadEventPayment(data.event.slug);
+    if (!payment.hasRazorpay && payment.hasManualMethods) {
+      return res.status(400).json({
+        error:
+          "This event uses manual payment. Please complete payment using the listed methods.",
+      });
+    }
+
+    const razorpayMethod = payment.methods.find((m) => m.type === "razorpay");
+    const { keyId, client } = getRazorpayClient(
+      razorpayMethod?.razorpayKeyId || "",
+    );
+    const amountInr = payment.amountInr || REGISTRATION_FEE_INR;
+    const amountPaise = Math.round(amountInr * 100);
     const receipt = `hfn_${Date.now().toString(36)}`.slice(0, 40);
 
     const order = await client.orders.create({
-      amount: REGISTRATION_FEE_PAISE,
-      currency: "INR",
+      amount: amountPaise,
+      currency: payment.currency || "INR",
       receipt,
       notes: {
         eventSlug: data.event.slug,
@@ -433,7 +486,7 @@ router.post("/create-order", async (req, res) => {
       orderId: order.id,
       amount: order.amount,
       currency: order.currency,
-      amountInr: REGISTRATION_FEE_INR,
+      amountInr,
       ticketName: "Event Pass",
       prefill: {
         name: data.name,
@@ -448,6 +501,107 @@ router.post("/create-order", async (req, res) => {
         ? "Payment is not configured yet. Please contact the organizers."
         : "Could not start payment. Please try again.";
     return res.status(500).json({ error: message });
+  }
+});
+
+router.post("/manual-confirm", async (req, res) => {
+  try {
+    const validated = validateRegistrationBody(req.body);
+    if (validated.error) {
+      return res.status(400).json({ error: validated.error });
+    }
+
+    const { data } = validated;
+    const provider = trimStr(req.body?.provider).toLowerCase();
+    const proofUrl = trimStr(req.body?.proofUrl);
+    const note = trimStr(req.body?.note).slice(0, 400);
+
+    const { payment } = await loadEventPayment(data.event.slug);
+    if (!payment.hasManualMethods) {
+      return res.status(400).json({
+        error: "Manual payment is not enabled for this event.",
+      });
+    }
+
+    if (provider && !MANUAL_PROVIDERS.has(provider)) {
+      return res.status(400).json({ error: "Invalid payment provider." });
+    }
+
+    const enabledProviders = payment.methods
+      .filter((m) => m.type !== "razorpay")
+      .map((m) => m.type);
+    if (provider && !enabledProviders.includes(provider)) {
+      return res.status(400).json({
+        error: "Selected payment method is not available for this event.",
+      });
+    }
+
+    const existing = await Rsvp.findOne({
+      email: data.email,
+      "event.slug": data.event.slug,
+    }).lean();
+
+    if (existing) {
+      return res.status(409).json({
+        error:
+          "You're already registered for this event with this email. You can still register for other meetups.",
+      });
+    }
+
+    const amountInr = payment.amountInr || REGISTRATION_FEE_INR;
+    const rsvp = await Rsvp.create({
+      name: data.name,
+      email: data.email,
+      phone: data.phone,
+      countryCode: data.countryCode,
+      linkedin: data.linkedin,
+      role: data.role,
+      company: data.company,
+      startupStage: data.startupStage,
+      gtmChallenges: data.gtmChallenges,
+      leaveWith: data.leaveWith,
+      industry: data.industry,
+      lookingFor: data.lookingFor,
+      offerCommunity: data.offerCommunity,
+      wantToMeet: data.wantToMeet,
+      canHelpWith: data.canHelpWith,
+      biggestChallenge: data.biggestChallenge,
+      joinWhatsapp: data.joinWhatsapp,
+      subscribeUpdates: data.subscribeUpdates,
+      questions: data.questions,
+      heardAboutEvent: data.heardAboutEvent,
+      heardAboutEventOther: data.heardAboutEventOther,
+      event: data.event,
+      payment: {
+        status: "pending_review",
+        amountInr,
+        amountPaise: Math.round(amountInr * 100),
+        currency: payment.currency || "INR",
+        method: provider || "manual",
+        provider: provider || "manual",
+        proofUrl,
+        note,
+      },
+    });
+
+    return res.status(201).json({
+      ok: true,
+      id: rsvp._id,
+      paymentStatus: "pending_review",
+      message:
+        "Registration received. Your payment is pending review by the organizers.",
+    });
+  } catch (err) {
+    console.error("Manual confirm failed:", err);
+    if (err?.code === 11000) {
+      return res.status(409).json({
+        error:
+          "You're already registered for this event with this email. You can still register for other meetups.",
+      });
+    }
+    return res.status(500).json({
+      error: "Could not submit registration. Please try again.",
+    });
   }
 });
 
@@ -479,6 +633,8 @@ router.post("/verify", async (req, res) => {
 
     const { data } = validated;
     const method = trimStr(paymentMethod).toLowerCase();
+    const { payment } = await loadEventPayment(data.event.slug);
+    const amountInr = payment.amountInr || REGISTRATION_FEE_INR;
 
     const rsvp = await Rsvp.create({
       name: data.name,
@@ -505,10 +661,11 @@ router.post("/verify", async (req, res) => {
       event: data.event,
       payment: {
         status: "paid",
-        amountInr: REGISTRATION_FEE_INR,
-        amountPaise: REGISTRATION_FEE_PAISE,
-        currency: "INR",
+        amountInr,
+        amountPaise: Math.round(amountInr * 100),
+        currency: payment.currency || "INR",
         method: PAYMENT_METHODS.has(method) ? method : "",
+        provider: "razorpay",
         razorpayOrderId: trimStr(orderId),
         razorpayPaymentId: trimStr(paymentId),
         razorpaySignature: trimStr(signature),
@@ -520,24 +677,23 @@ router.post("/verify", async (req, res) => {
       rsvp,
       mapsUrl: data.mapsUrl,
     });
-
-    void sendInvoiceEmailNotification({ rsvp });
+    void sendInvoiceEmailNotification(rsvp);
 
     return res.status(201).json({
-      message: "Payment successful. RSVP submitted.",
+      ok: true,
       id: rsvp._id,
-      paymentId: trimStr(paymentId),
+      paymentStatus: "paid",
     });
   } catch (err) {
+    console.error("Verify payment failed:", err);
     if (err?.code === 11000) {
       return res.status(409).json({
         error:
           "You're already registered for this event with this email. You can still register for other meetups.",
       });
     }
-    console.error("Payment verify failed:", err);
     return res.status(500).json({
-      error: "Could not complete registration after payment. Please contact support.",
+      error: "Could not complete registration. Please contact support.",
     });
   }
 });

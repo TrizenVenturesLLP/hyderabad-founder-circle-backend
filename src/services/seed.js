@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { Admin } from "../models/Admin.js";
 import { Event } from "../models/Event.js";
+import { Organization } from "../models/Organization.js";
 
 const venueDefaults = {
   time: "11:00 AM – 1:00 PM",
@@ -32,6 +33,53 @@ const nanoSpaceVenue = {
   format: "Offline",
 };
 
+const bandExplorersVenue = {
+  time: "6:00 PM – 9:00 PM",
+  venue: "NanoSpace Coworking",
+  space: "Vijaya Krishna Towers",
+  area: "Nanakramguda",
+  address:
+    "Vijaya Krishna Towers, Nanakramguda, Hyderabad, Telangana",
+  mapsUrl: "https://share.google/sRNjvPbJCCaQRIYrB",
+  mapsEmbedUrl:
+    "https://www.google.com/maps?q=Vijaya+Krishna+Towers+Nanakramguda+Hyderabad&output=embed",
+  city: "Hyderabad",
+  seats: 80,
+  format: "Offline",
+};
+
+const DEFAULT_PAYMENT = {
+  enabled: true,
+  amountInr: 99,
+  currency: "INR",
+  methods: [
+    {
+      type: "razorpay",
+      enabled: true,
+      label: "Razorpay",
+      razorpayKeyId: "",
+      instructions: "",
+    },
+  ],
+};
+
+const BAND_EXPLORERS_PAYMENT = {
+  enabled: true,
+  amountInr: 599,
+  currency: "INR",
+  methods: [
+    {
+      type: "upi_id",
+      enabled: true,
+      label: "PhonePe / Google Pay",
+      upiId: "",
+      paymentNumber: "9666696790",
+      instructions:
+        "Pay ₹599 via PhonePe or Google Pay to 9666696790. For queries call +91 8247579912. No snacks included.",
+    },
+  ],
+};
+
 const SEED_EVENTS = [
   {
     slug: "hyderabad-founders-network-july",
@@ -45,6 +93,7 @@ const SEED_EVENTS = [
       "The monthly roundtable. Show up, share what you're building, find your people.",
     sortOrder: 0,
     published: true,
+    payment: DEFAULT_PAYMENT,
     speakers: [
       {
         name: "Prasad Anumula",
@@ -86,6 +135,7 @@ const SEED_EVENTS = [
       "Building a stronger founder community in Hyderabad. Connect · Learn · Collaborate · Grow.",
     sortOrder: 0,
     published: true,
+    payment: DEFAULT_PAYMENT,
     speakers: [
       {
         name: "Sree Keerthana Gorty",
@@ -110,32 +160,172 @@ const SEED_EVENTS = [
   },
 ];
 
-export async function seedAdminAndEvents() {
-  const email = (process.env.ADMIN_EMAIL || "admin@trizenventures.com")
-    .trim()
-    .toLowerCase();
-  const password = process.env.ADMIN_PASSWORD || "Admin123!";
+const NANOSPACE_SEED_EVENTS = [
+  {
+    slug: "band-explorers-vybe",
+    title: "Band Explorers Vybe — The Corporate Music Break",
+    dateISO: "2026-09-19",
+    dateLabel: "Saturday, 19 September 2026",
+    dateConfirmed: true,
+    ...bandExplorersVenue,
+    status: "open",
+    blurb:
+      "Live music · Unwind · Connect. Up to 10 members can pitch their problem statements (2 minutes each). Timings 6:00 PM – 9:00 PM at NanoSpace. No snacks. Marketing partner: Trizen Community. Entry ₹599.",
+    sortOrder: 1,
+    published: true,
+    payment: BAND_EXPLORERS_PAYMENT,
+    hosts: [
+      {
+        name: "Fun Fusion @Work",
+        role: "Event partner",
+        startup: "Corporate music & community experiences",
+        linkedin: "",
+        photo: "",
+      },
+      {
+        name: "NanoSpace Coworking",
+        role: "Host venue",
+        startup: "Nanakramguda, Hyderabad",
+        linkedin: "https://www.linkedin.com/company/nanospace-coworking/",
+        photo: "",
+      },
+    ],
+    speakers: [],
+  },
+];
 
-  const existingAdmin = await Admin.findOne({ email });
-  if (!existingAdmin) {
+async function upsertOrganization({ name, slug, type, status = "active" }) {
+  const org = await Organization.findOneAndUpdate(
+    { slug },
+    { $set: { name, slug, type, status } },
+    { upsert: true, new: true },
+  );
+  return org;
+}
+
+async function upsertStaffUser({
+  email,
+  password,
+  name,
+  role,
+  organizationId,
+}) {
+  const normalized = email.trim().toLowerCase();
+  let admin = await Admin.findOne({ email: normalized });
+  if (!admin) {
     const passwordHash = await bcrypt.hash(password, 12);
-    await Admin.create({
-      email,
+    admin = await Admin.create({
+      email: normalized,
       passwordHash,
-      name: process.env.ADMIN_NAME || "Trizen Admin",
+      name,
+      role,
+      organizationId: organizationId || null,
     });
-    console.log(`[seed] Admin created: ${email}`);
+    console.log(`[seed] Staff created: ${normalized} (${role})`);
+    return admin;
+  }
+
+  admin.name = name;
+  admin.role = role;
+  admin.organizationId = organizationId || null;
+  await admin.save();
+  console.log(`[seed] Staff updated: ${normalized} (${role})`);
+  return admin;
+}
+
+export async function seedAdminAndEvents() {
+  const trizenOrg = await upsertOrganization({
+    name: "Trizen Ventures",
+    slug: "trizen-ventures",
+    type: "partner",
+    status: "active",
+  });
+  const adminOrg = await upsertOrganization({
+    name: "Admin",
+    slug: "admin",
+    type: "platform",
+    status: "active",
+  });
+  const nanoSpaceOrg = await upsertOrganization({
+    name: "NanoSpace",
+    slug: "nanospace",
+    type: "partner",
+    status: "active",
+  });
+  console.log(
+    `[seed] Organizations ready: ${trizenOrg.slug}, ${adminOrg.slug}, ${nanoSpaceOrg.slug}`,
+  );
+
+  const platformAdmin = await upsertStaffUser({
+    email: process.env.ADMIN_EMAIL || "admin@trizenventures.com",
+    password: process.env.ADMIN_PASSWORD || "Admin123!",
+    name: process.env.ADMIN_NAME || "Platform Admin",
+    role: "platform_admin",
+    organizationId: null,
+  });
+
+  await upsertStaffUser({
+    email: process.env.TRIZEN_ORG_EMAIL || "trizen@trizenventures.com",
+    password: process.env.TRIZEN_ORG_PASSWORD || "TrizenOrg123!",
+    name: process.env.TRIZEN_ORG_NAME || "Trizen Ventures",
+    role: "org_admin",
+    organizationId: trizenOrg._id,
+  });
+
+  await upsertStaffUser({
+    email: process.env.NANOSPACE_ORG_EMAIL || "nanospace@nanospace.in",
+    password: process.env.NANOSPACE_ORG_PASSWORD || "NanoSpace123!",
+    name: process.env.NANOSPACE_ORG_NAME || "NanoSpace",
+    role: "org_admin",
+    organizationId: nanoSpaceOrg._id,
+  });
+
+  const migrated = await Event.updateMany(
+    {
+      $or: [
+        { organizationId: { $exists: false } },
+        { organizationId: null },
+      ],
+    },
+    {
+      $set: {
+        organizationId: trizenOrg._id,
+        createdBy: platformAdmin._id,
+        payment: DEFAULT_PAYMENT,
+      },
+    },
+  );
+  if (migrated.modifiedCount > 0) {
+    console.log(
+      `[seed] Migrated ${migrated.modifiedCount} event(s) → Trizen Ventures`,
+    );
   }
 
   for (const event of SEED_EVENTS) {
     const exists = await Event.findOne({ slug: event.slug });
+    const withOwner = {
+      ...event,
+      organizationId: trizenOrg._id,
+      createdBy: platformAdmin._id,
+      payment: event.payment || DEFAULT_PAYMENT,
+    };
+
     if (!exists) {
-      await Event.create(event);
+      await Event.create(withOwner);
       console.log(`[seed] Event created: ${event.slug}`);
     } else if (event.slug === "hyderabad-founders-network-july") {
       await Event.updateOne(
         { slug: event.slug },
-        { $set: { speakers: event.speakers, dateConfirmed: true } },
+        {
+          $set: {
+            speakers: event.speakers,
+            dateConfirmed: true,
+            organizationId: trizenOrg._id,
+            payment: exists.payment?.methods?.length
+              ? exists.payment
+              : DEFAULT_PAYMENT,
+          },
+        },
       );
       console.log(`[seed] Updated speakers for: ${event.slug}`);
     } else {
@@ -143,23 +333,73 @@ export async function seedAdminAndEvents() {
         { slug: event.slug },
         { $set: { dateConfirmed: event.dateConfirmed === true } },
       );
-      console.log(`[seed] Date confirmation for ${event.slug}: ${event.dateConfirmed === true}`);
+      console.log(
+        `[seed] Date confirmation for ${event.slug}: ${event.dateConfirmed === true}`,
+      );
     }
     if (event.slug === "hyderabad-founders-network-september") {
       const { slug, sortOrder, published, ...septemberFields } = event;
       await Event.updateOne(
         { slug: event.slug },
-        { $set: { ...septemberFields, speakers: event.speakers } },
+        {
+          $set: {
+            ...septemberFields,
+            speakers: event.speakers,
+            organizationId: trizenOrg._id,
+            createdBy: platformAdmin._id,
+            payment: exists?.payment?.methods?.length
+              ? exists.payment
+              : DEFAULT_PAYMENT,
+          },
+        },
       );
       console.log(`[seed] Updated September meetup: ${event.slug}`);
     }
   }
 
+  for (const event of NANOSPACE_SEED_EVENTS) {
+    const exists = await Event.findOne({ slug: event.slug });
+    const withOwner = {
+      ...event,
+      organizationId: nanoSpaceOrg._id,
+      createdBy: platformAdmin._id,
+      payment: event.payment || BAND_EXPLORERS_PAYMENT,
+    };
+
+    if (!exists) {
+      await Event.create(withOwner);
+      console.log(`[seed] Event created: ${event.slug}`);
+    } else {
+      const { slug, sortOrder, published, ...fields } = event;
+      await Event.updateOne(
+        { slug: event.slug },
+        {
+          $set: {
+            ...fields,
+            organizationId: nanoSpaceOrg._id,
+            createdBy: platformAdmin._id,
+            payment: event.payment,
+            published: event.published !== false,
+            sortOrder: event.sortOrder ?? exists.sortOrder ?? 0,
+          },
+        },
+      );
+      console.log(`[seed] Updated NanoSpace event: ${event.slug}`);
+    }
+  }
+
   const augustUnpublish = await Event.updateOne(
     { slug: "hyderabad-founders-network-august" },
-    { $set: { published: false } },
+    {
+      $set: {
+        published: false,
+        organizationId: trizenOrg._id,
+      },
+    },
   );
   if (augustUnpublish.matchedCount > 0) {
-    console.log("[seed] Unpublished August meetup (removed from public listings)");
+    console.log(
+      "[seed] Unpublished August meetup (removed from public listings)",
+    );
   }
 }

@@ -27,9 +27,46 @@ const hostSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const paymentMethodSchema = new mongoose.Schema(
+  {
+    type: {
+      type: String,
+      enum: ["razorpay", "upi_qr", "upi_id", "payment_link", "qiyu", "other"],
+      required: true,
+    },
+    enabled: { type: Boolean, default: true },
+    label: { type: String, trim: true, default: "" },
+    upiId: { type: String, trim: true, default: "" },
+    paymentNumber: { type: String, trim: true, default: "" },
+    paymentLink: { type: String, trim: true, default: "" },
+    qrImageUrl: { type: String, trim: true, default: "" },
+    razorpayKeyId: { type: String, trim: true, default: "" },
+    qiyuMerchantId: { type: String, trim: true, default: "" },
+    qiyuApiKey: { type: String, trim: true, default: "" },
+    instructions: { type: String, trim: true, default: "" },
+  },
+  { _id: false },
+);
+
+const paymentConfigSchema = new mongoose.Schema(
+  {
+    enabled: { type: Boolean, default: true },
+    amountInr: { type: Number, default: 99 },
+    currency: { type: String, trim: true, default: "INR" },
+    methods: { type: [paymentMethodSchema], default: [] },
+  },
+  { _id: false },
+);
+
 const eventSchema = new mongoose.Schema(
   {
-    slug: { type: String, required: true, unique: true, trim: true, lowercase: true },
+    slug: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      lowercase: true,
+    },
     title: { type: String, required: true, trim: true },
     dateISO: { type: String, required: true, trim: true },
     dateLabel: { type: String, required: true, trim: true },
@@ -63,11 +100,24 @@ const eventSchema = new mongoose.Schema(
     },
     published: { type: Boolean, default: true },
     sortOrder: { type: Number, default: 0 },
+    organizationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Organization",
+      required: true,
+      index: true,
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Admin",
+      default: null,
+    },
+    payment: { type: paymentConfigSchema, default: () => ({}) },
   },
   { timestamps: true },
 );
 
 eventSchema.index({ dateISO: 1 });
 eventSchema.index({ status: 1, published: 1 });
+eventSchema.index({ organizationId: 1, published: 1 });
 
 export const Event = mongoose.model("Event", eventSchema);
