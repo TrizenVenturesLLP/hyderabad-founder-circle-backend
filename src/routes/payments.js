@@ -514,7 +514,13 @@ router.post("/manual-confirm", async (req, res) => {
     const { data } = validated;
     const provider = trimStr(req.body?.provider).toLowerCase();
     const proofUrl = trimStr(req.body?.proofUrl);
-    const note = trimStr(req.body?.note).slice(0, 400);
+    const note = trimStr(req.body?.note).slice(0, 120);
+
+    if (!note) {
+      return res.status(400).json({
+        error: "Transaction ID or UTR is required.",
+      });
+    }
 
     const { payment } = await loadEventPayment(data.event.slug);
     if (!payment.hasManualMethods) {
