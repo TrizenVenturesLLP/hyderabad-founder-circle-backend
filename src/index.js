@@ -49,6 +49,7 @@ function isAllowedOrigin(origin) {
 }
 
 const app = express();
+app.set("trust proxy", 1);
 let mongoReady = false;
 
 // Explicit CORS so OPTIONS preflight always gets headers (even during 5xx)

@@ -1,7 +1,9 @@
 import { Router } from "express";
+import multer from "multer";
 import { Rsvp } from "../models/Rsvp.js";
 import { Event } from "../models/Event.js";
 import {
+  sendPaymentReviewEmail,
   sendRsvpConfirmationEmail,
   sendInvoiceEmailNotification,
 } from "../services/emailNotification.js";
@@ -12,8 +14,37 @@ import {
 } from "../lib/razorpay.js";
 import { publicPaymentConfig } from "../lib/eventPayment.js";
 import { isRoleAllowed } from "../lib/eventConfig.js";
+import {
+  getImageObject,
+  QR_PAYMENT_BUCKET,
+  TRANSACTION_PROOF_BUCKET,
+  uploadImage,
+} from "../lib/minio.js";
 
 const router = Router();
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 3 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, callback) => {
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)) {
+      return callback(new Error("Only JPG, PNG, and WebP images are allowed."));
+    }
+    return callback(null, true);
+  },
+});
+const receiveProofImage = (req, res, next) => {
+  imageUpload.single("proof")(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({
+        error:
+          err.code === "LIMIT_FILE_SIZE"
+            ? "Payment screenshot must be smaller than 3 MB."
+            : err.message,
+      });
+    }
+    return next();
+  });
+};
 
 const ROLES = new Set([
   "Founder / Co-founder",
@@ -388,6 +419,40 @@ function validateRegistrationBody(body) {
   };
 }
 
+router.post("/proof-upload", receiveProofImage, async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "Payment proof image is required." });
+    }
+    const key = await uploadImage({
+      bucket: TRANSACTION_PROOF_BUCKET,
+      buffer: req.file.buffer,
+      contentType: req.file.mimetype,
+      prefix: "registrations",
+    });
+    return res.status(201).json({ key });
+  } catch (err) {
+    console.error("Payment proof upload failed:", err);
+    return res.status(500).json({ error: "Could not upload payment proof." });
+  }
+});
+
+router.get("/qr/:key", async (req, res) => {
+  try {
+    const objectName = Buffer.from(req.params.key, "base64url").toString("utf8");
+    if (!objectName.startsWith("event-qr/")) {
+      return res.status(404).end();
+    }
+    const { stream, stat } = await getImageObject(QR_PAYMENT_BUCKET, objectName);
+    res.setHeader("Content-Type", stat.metaData?.["content-type"] || "image/png");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    stream.on("error", () => res.destroy());
+    return stream.pipe(res);
+  } catch {
+    return res.status(404).end();
+  }
+});
+
 router.get("/config", async (req, res) => {
   try {
     const eventSlug = trimStr(req.query.eventSlug);
@@ -415,7 +480,14 @@ router.get("/config", async (req, res) => {
       currency: payment.currency,
       ticketName: "Event Pass",
       checkoutMode: payment.checkoutMode,
-      methods: payment.methods,
+      methods: payment.methods.map((method) => ({
+        ...method,
+        qrImageUrl: method.qrImageUrl?.startsWith("minio:")
+          ? `${req.protocol}://${req.get("host")}/api/payments/qr/${Buffer.from(
+              method.qrImageUrl.slice(6),
+            ).toString("base64url")}`
+          : method.qrImageUrl,
+      })),
       hasRazorpay: payment.hasRazorpay,
       hasManualMethods: payment.hasManualMethods,
       enabled: payment.enabled,
@@ -513,12 +585,12 @@ router.post("/manual-confirm", async (req, res) => {
 
     const { data } = validated;
     const provider = trimStr(req.body?.provider).toLowerCase();
-    const proofUrl = trimStr(req.body?.proofUrl);
+    const proofKey = trimStr(req.body?.proofKey);
     const note = trimStr(req.body?.note).slice(0, 120);
 
-    if (!note) {
+    if (!/^registrations\/\d{4}-\d{2}-\d{2}\/[a-f0-9-]+\.(?:jpg|png|webp)$/i.test(proofKey)) {
       return res.status(400).json({
-        error: "Transaction ID or UTR is required.",
+        error: "Upload a valid payment screenshot before submitting.",
       });
     }
 
@@ -585,10 +657,12 @@ router.post("/manual-confirm", async (req, res) => {
         currency: payment.currency || "INR",
         method: provider || "manual",
         provider: provider || "manual",
-        proofUrl,
+        proofUrl: proofKey,
         note,
       },
     });
+
+    void sendPaymentReviewEmail({ rsvp });
 
     return res.status(201).json({
       ok: true,
@@ -683,7 +757,7 @@ router.post("/verify", async (req, res) => {
       rsvp,
       mapsUrl: data.mapsUrl,
     });
-    void sendInvoiceEmailNotification(rsvp);
+    void sendInvoiceEmailNotification({ rsvp });
 
     return res.status(201).json({
       ok: true,

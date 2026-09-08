@@ -45,16 +45,19 @@ function getTransporter() {
 }
 
 /**
- * @param {{ to: string, subject: string, html: string, text: string, attachments?: any[] }} opts
+ * @param {{ to: string, subject: string, html: string, text: string, senderName?: string, attachments?: any[] }} opts
  */
-export async function sendDirectMail({ to, subject, html, text, attachments }) {
+export async function sendDirectMail({ to, subject, html, text, senderName, attachments }) {
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
     throw new Error("SMTP credentials are not configured.");
   }
 
   const info = await getTransporter().sendMail({
     from: {
-      name: process.env.EMAIL_FROM_NAME || "Hyderabad Founders Network",
+      name:
+        String(senderName || "").trim() ||
+        process.env.EMAIL_FROM_NAME ||
+        "Trizen Community",
       address: process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_USER,
     },
     replyTo: process.env.EMAIL_REPLY_TO || process.env.SMTP_USER,

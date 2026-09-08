@@ -1,4 +1,5 @@
 import { Router } from "express";
+import multer from "multer";
 import { Event } from "../../models/Event.js";
 import { Organization } from "../../models/Organization.js";
 import {
@@ -7,10 +8,55 @@ import {
   requireAdmin,
 } from "../../middleware/auth.js";
 import { sanitizePaymentConfig } from "../../lib/eventPayment.js";
+import {
+  QR_PAYMENT_BUCKET,
+  uploadImage,
+} from "../../lib/minio.js";
 
 const router = Router();
+const qrUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 3 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, callback) => {
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)) {
+      return callback(new Error("Only JPG, PNG, and WebP images are allowed."));
+    }
+    return callback(null, true);
+  },
+});
+const receiveQrImage = (req, res, next) => {
+  qrUpload.single("qr")(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({
+        error:
+          err.code === "LIMIT_FILE_SIZE"
+            ? "QR image must be smaller than 3 MB."
+            : err.message,
+      });
+    }
+    return next();
+  });
+};
 
 router.use(requireAdmin);
+
+router.post("/payment-qr-upload", receiveQrImage, async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "QR image is required." });
+    }
+    const key = await uploadImage({
+      bucket: QR_PAYMENT_BUCKET,
+      buffer: req.file.buffer,
+      contentType: req.file.mimetype,
+      prefix: "event-qr",
+    });
+    return res.status(201).json({ key: `minio:${key}` });
+  } catch (err) {
+    console.error("[admin/events payment QR upload]", err);
+    return res.status(500).json({ error: "Could not upload payment QR image." });
+  }
+});
 
 function sanitizePayload(body = {}) {
   return {

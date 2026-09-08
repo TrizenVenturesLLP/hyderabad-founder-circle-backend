@@ -1,6 +1,7 @@
 import { sendDirectMail } from "../lib/mailer.js";
 import {
   buildRsvpConfirmationEmail,
+  buildPaymentReviewEmail,
   buildInvoiceEmail,
   buildAdminCustomEmail,
 } from "../lib/emailTemplates.js";
@@ -162,6 +163,7 @@ export async function sendRsvpConfirmationEmail({ rsvp, mapsUrl }) {
     badgeUrl,
     communityUrl: COMMUNITY_WHATSAPP_URL,
     supportEmail: "community@trizenventures.com",
+    senderName: rsvp.event?.title || "Trizen Community",
     payment: paymentPayload(rsvp.payment),
   };
 
@@ -184,10 +186,47 @@ export async function sendRsvpConfirmationEmail({ rsvp, mapsUrl }) {
       subject: rendered.subject,
       html: rendered.html,
       text: rendered.text,
+      senderName: serviceBody.senderName,
     });
     console.log("[email] Confirmation sent directly to", rsvp.email);
   } catch (err) {
     console.error("[email] Direct confirmation send failed:", err instanceof Error ? err.message : err);
+  }
+}
+
+export async function sendPaymentReviewEmail({ rsvp }) {
+  const serviceBody = {
+    email: rsvp.email,
+    name: rsvp.name,
+    eventSlug: rsvp.event?.slug || "",
+    eventTitle: rsvp.event?.title || "Event registration",
+    senderName: rsvp.event?.title || "Trizen Community",
+  };
+
+  const serviceResult = await postToEmailService(
+    "/api/v1/email/payment-review",
+    serviceBody,
+  );
+  if (serviceResult === true) {
+    console.log("[email] Payment review email sent via microservice to", rsvp.email);
+    return;
+  }
+
+  const rendered = buildPaymentReviewEmail(serviceBody);
+  try {
+    await sendDirectMail({
+      to: rsvp.email,
+      subject: rendered.subject,
+      html: rendered.html,
+      text: rendered.text,
+      senderName: serviceBody.senderName,
+    });
+    console.log("[email] Payment review email sent directly to", rsvp.email);
+  } catch (err) {
+    console.error(
+      "[email] Direct payment review send failed:",
+      err instanceof Error ? err.message : err,
+    );
   }
 }
 
@@ -232,6 +271,7 @@ export async function sendInvoiceEmailNotification({ rsvp }) {
     eventTime: rsvp.event?.time || "",
     eventVenue: [rsvp.event?.venue, rsvp.event?.city].filter(Boolean).join(", "),
     razorpayPaymentId: payment?.razorpayPaymentId || "",
+    senderName: rsvp.event?.title || "Trizen Community",
   };
 
   // Try microservice
@@ -272,6 +312,7 @@ export async function sendInvoiceEmailNotification({ rsvp }) {
       subject: rendered.subject,
       html: rendered.html,
       text: rendered.text,
+      senderName: serviceBody.senderName,
       attachments: [
         {
           filename: `Invoice_${safeNum}.pdf`,

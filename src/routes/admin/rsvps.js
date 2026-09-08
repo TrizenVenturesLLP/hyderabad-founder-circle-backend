@@ -11,6 +11,10 @@ import {
   sendInvoiceEmailNotification,
   sendRsvpConfirmationEmail,
 } from "../../services/emailNotification.js";
+import {
+  getPrivateImageUrl,
+  TRANSACTION_PROOF_BUCKET,
+} from "../../lib/minio.js";
 
 const router = Router();
 
@@ -108,7 +112,7 @@ router.get("/", async (req, res) => {
       ]),
     );
 
-    const enriched = items.map((item) => {
+    const enriched = await Promise.all(items.map(async (item) => {
       const key = String(item.email || "").toLowerCase();
       const stats = statsByEmail[key] || {
         sentCount: 0,
@@ -116,11 +120,24 @@ router.get("/", async (req, res) => {
         lastStatus: "",
         lastSentAt: null,
       };
+      let proofUrl = item.payment?.proofUrl || "";
+      if (proofUrl && !proofUrl.startsWith("data:") && !/^https?:\/\//i.test(proofUrl)) {
+        try {
+          proofUrl = await getPrivateImageUrl(
+            TRANSACTION_PROOF_BUCKET,
+            proofUrl,
+          );
+        } catch (err) {
+          console.warn("[admin/rsvps] Could not sign payment proof:", err instanceof Error ? err.message : err);
+          proofUrl = "";
+        }
+      }
       return {
         ...item,
+        payment: item.payment ? { ...item.payment, proofUrl } : item.payment,
         emailStats: stats,
       };
-    });
+    }));
 
     return res.json({
       items: enriched,

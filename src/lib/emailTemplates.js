@@ -74,7 +74,7 @@ export function wrapAdminEmailHtml({ title = "Hyderabad Founders Network", bodyH
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f1ea;padding:32px 16px;">
 <tr><td align="center">
 <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.08);">
-<tr><td style="background:#1f1a17;color:#fff;padding:14px 24px;font-size:13px;letter-spacing:.08em;text-align:center;text-transform:uppercase;">Hyderabad Founders Network</td></tr>
+<tr><td style="background:#1f1a17;color:#fff;padding:14px 24px;font-size:13px;letter-spacing:.08em;text-align:center;text-transform:uppercase;">${eventTitle}</td></tr>
 <tr><td style="padding:28px 32px 8px;">
 ${bodyHtml}
 </td></tr>
@@ -208,6 +208,36 @@ export function buildRsvpConfirmationEmail(data) {
     .filter((l) => l != null)
     .join("\n");
 
+  return { subject, html, text };
+}
+
+export function buildPaymentReviewEmail(data) {
+  const name = esc(data.name || "there");
+  const eventTitle = esc(data.eventTitle || "your event");
+  const subject = `Application received — ${data.eventTitle || "Event registration"}`;
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>${subject}</title></head>
+<body style="margin:0;padding:0;background:#f4f1ea;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f1ea;padding:32px 16px;"><tr><td align="center">
+<table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px;background:#fff;border-radius:12px;overflow:hidden;">
+<tr><td style="background:#1f1a17;color:#fff;padding:14px 24px;font-size:13px;letter-spacing:.08em;text-align:center;text-transform:uppercase;">${eventTitle}</td></tr>
+<tr><td style="padding:30px 32px;">
+<h1 style="margin:0 0 12px;font-size:24px;color:#1f1a17;">Your application is under review</h1>
+<p style="margin:0 0 16px;color:#374151;font-size:16px;line-height:1.6;">Hi ${name},</p>
+<p style="margin:0 0 18px;color:#374151;font-size:16px;line-height:1.6;">We received your registration application and payment proof for <strong>${eventTitle}</strong>.</p>
+<p style="margin:0;color:#374151;font-size:16px;line-height:1.6;">Our team will verify the payment. You will receive a separate registration confirmation email after your application is approved.</p>
+</td></tr>
+<tr><td style="padding:16px 24px;text-align:center;border-top:1px solid #eee7dc;color:#9a9188;font-size:12px;">Please keep this email for your records.</td></tr>
+</table></td></tr></table>
+</body></html>`;
+  const text = [
+    `Hi ${data.name || "there"},`,
+    "",
+    `We received your registration application and payment proof for ${data.eventTitle || "the event"}.`,
+    "Your application is under review. Our team will verify the payment.",
+    "You will receive a separate registration confirmation email after approval.",
+  ].join("\n");
   return { subject, html, text };
 }
 

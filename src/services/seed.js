@@ -69,13 +69,15 @@ const BAND_EXPLORERS_PAYMENT = {
   currency: "INR",
   methods: [
     {
-      type: "upi_id",
+      type: "upi_qr",
       enabled: true,
-      label: "PhonePe / Google Pay",
+      label: "Scan QR to pay",
       upiId: "",
-      paymentNumber: "9666696790",
+      paymentNumber: "",
+      qrImageUrl:
+        "minio:event-qr/band-explorers-vybe/payment-qr.png",
       instructions:
-        "Pay ₹599 via PhonePe or Google Pay to 9666696790. For queries call +91 8247579912. No snacks included.",
+        "Scan the QR code to pay ₹599. For queries call +91 8247579912. No snacks included.",
     },
   ],
 };
@@ -247,7 +249,7 @@ export async function seedAdminAndEvents() {
     status: "active",
   });
   const nanoSpaceOrg = await upsertOrganization({
-    name: "NanoSpace",
+    name: "NanoSpace Coworking",
     slug: "nanospace",
     type: "partner",
     status: "active",
@@ -275,7 +277,7 @@ export async function seedAdminAndEvents() {
   await upsertStaffUser({
     email: process.env.NANOSPACE_ORG_EMAIL || "nanospace@nanospace.in",
     password: process.env.NANOSPACE_ORG_PASSWORD || "NanoSpace123!",
-    name: process.env.NANOSPACE_ORG_NAME || "NanoSpace",
+    name: process.env.NANOSPACE_ORG_NAME || "NanoSpace Coworking",
     role: "org_admin",
     organizationId: nanoSpaceOrg._id,
   });
