@@ -9,6 +9,30 @@ const METHOD_TYPES = new Set([
   "other",
 ]);
 
+function sanitizeTickets(rawTickets) {
+  if (!Array.isArray(rawTickets)) return [];
+  return rawTickets
+    .map((ticket) => {
+      const id = String(ticket?.id || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, "-");
+      const amountInr = Number(ticket?.amountInr);
+      const memberCount = Number(ticket?.memberCount);
+      if (!id || !Number.isFinite(amountInr) || amountInr <= 0) return null;
+      return {
+        id,
+        label: String(ticket?.label || "").trim() || id,
+        amountInr,
+        memberCount:
+          Number.isFinite(memberCount) && memberCount > 0
+            ? Math.round(memberCount)
+            : 1,
+      };
+    })
+    .filter(Boolean);
+}
+
 export function sanitizePaymentConfig(raw) {
   if (!raw || typeof raw !== "object") {
     return {
@@ -16,6 +40,7 @@ export function sanitizePaymentConfig(raw) {
       amountInr: 99,
       currency: "INR",
       methods: [],
+      tickets: [],
     };
   }
 
@@ -41,21 +66,43 @@ export function sanitizePaymentConfig(raw) {
         .filter(Boolean)
     : [];
 
+  const tickets = sanitizeTickets(raw.tickets);
   const amountInr = Number(raw.amountInr);
+  const defaultAmount =
+    tickets[0]?.amountInr ||
+    (Number.isFinite(amountInr) && amountInr >= 0 ? amountInr : 99);
+
   return {
     enabled: raw.enabled !== false,
-    amountInr: Number.isFinite(amountInr) && amountInr >= 0 ? amountInr : 99,
+    amountInr: defaultAmount,
     currency: String(raw.currency || "INR").trim() || "INR",
     methods,
+    tickets,
   };
+}
+
+export function resolvePaymentTicket(payment, ticketId) {
+  const tickets = Array.isArray(payment?.tickets) ? payment.tickets : [];
+  if (tickets.length === 0) {
+    return {
+      id: "",
+      label: "Event Pass",
+      amountInr: Number(payment?.amountInr) || 0,
+      memberCount: 1,
+    };
+  }
+  const id = String(ticketId || "").trim().toLowerCase();
+  const ticket = tickets.find((item) => item.id === id);
+  return ticket || null;
 }
 
 /** Public-safe payment config (no secrets). */
 export function publicPaymentConfig(payment, fallbackAmountInr = 99) {
+  const tickets = sanitizeTickets(payment?.tickets);
   const amountInr =
     Number(payment?.amountInr) > 0
       ? Number(payment.amountInr)
-      : fallbackAmountInr;
+      : tickets[0]?.amountInr || fallbackAmountInr;
   const methods = Array.isArray(payment?.methods)
     ? payment.methods
         .filter((m) => m && m.enabled !== false)
@@ -81,6 +128,8 @@ export function publicPaymentConfig(payment, fallbackAmountInr = 99) {
     amountPaise: Math.round(amountInr * 100),
     currency: payment?.currency || "INR",
     methods,
+    tickets,
+    formMode: tickets.length > 0 ? "minimal" : "full",
     hasRazorpay,
     hasManualMethods: manualMethods.length > 0,
     checkoutMode: hasRazorpay

@@ -70,10 +70,23 @@ const rsvpSchema = new mongoose.Schema(
       provider: { type: String, trim: true, default: "" },
       proofUrl: { type: String, trim: true, default: "" },
       note: { type: String, trim: true, default: "" },
+      ticketId: { type: String, trim: true, default: "" },
+      ticketLabel: { type: String, trim: true, default: "" },
+      memberCount: { type: Number, default: 1 },
       razorpayOrderId: { type: String, trim: true, default: "" },
       razorpayPaymentId: { type: String, trim: true, default: "" },
       razorpaySignature: { type: String, trim: true, default: "" },
       paidAt: { type: Date },
+    },
+    guests: {
+      type: [
+        {
+          name: { type: String, trim: true, default: "" },
+          phone: { type: String, trim: true, default: "" },
+          email: { type: String, trim: true, lowercase: true, default: "" },
+        },
+      ],
+      default: [],
     },
   },
   { timestamps: true },

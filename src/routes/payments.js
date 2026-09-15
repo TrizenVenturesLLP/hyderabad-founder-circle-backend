@@ -12,7 +12,7 @@ import {
   REGISTRATION_FEE_INR,
   verifyPaymentSignature,
 } from "../lib/razorpay.js";
-import { publicPaymentConfig } from "../lib/eventPayment.js";
+import { publicPaymentConfig, resolvePaymentTicket } from "../lib/eventPayment.js";
 import { isRoleAllowed } from "../lib/eventConfig.js";
 import {
   getImageObject,
@@ -209,7 +209,137 @@ function validateRegistrationBody(body) {
     heardAboutEvent = "",
     heardAboutEventOther = "",
     event,
+    ticketId = "",
+    guests = [],
   } = body ?? {};
+
+  if (
+    !event ||
+    !isNonEmptyString(event.slug) ||
+    !isNonEmptyString(event.title) ||
+    !isNonEmptyString(event.dateISO) ||
+    !isNonEmptyString(event.dateLabel) ||
+    !isNonEmptyString(event.time) ||
+    !isNonEmptyString(event.venue) ||
+    !isNonEmptyString(event.city) ||
+    !isNonEmptyString(event.format)
+  ) {
+    return { error: "Complete event details are required." };
+  }
+
+  const eventSlug = trimStr(event?.slug).toLowerCase();
+  const isMinimalForm =
+    eventSlug === "band-explorers-vybe" ||
+    String(body?.formMode || "").trim() === "minimal";
+
+  if (isMinimalForm) {
+    if (
+      !isNonEmptyString(name) ||
+      !isNonEmptyString(email) ||
+      !isNonEmptyString(phone)
+    ) {
+      return { error: "Name, email, and mobile number are required." };
+    }
+
+    const localPhoneDigits = trimStr(phone).replace(/\D/g, "");
+    if (!/^\d{10}$/.test(localPhoneDigits)) {
+      return { error: "Please provide a valid 10-digit mobile number." };
+    }
+    if (trimStr(name).length > FIELD_LIMITS.name) {
+      return { error: "Name is too long." };
+    }
+    if (trimStr(email).length > FIELD_LIMITS.email) {
+      return { error: "Email is too long." };
+    }
+    if (!isValidEmail(email.trim())) {
+      return { error: "Please provide a valid email address." };
+    }
+
+    const code = trimStr(countryCode) || "+91";
+    const primaryEmail = email.trim().toLowerCase();
+    const normalizedGuests = [];
+    const guestList = Array.isArray(guests) ? guests : [];
+
+    for (const guest of guestList) {
+      const guestName = trimStr(guest?.name);
+      const guestEmail = trimStr(guest?.email).toLowerCase();
+      const guestPhoneDigits = trimStr(guest?.phone).replace(/\D/g, "");
+      if (!guestName || !guestEmail || !guestPhoneDigits) {
+        return {
+          error: "Second member name, email, and mobile number are required.",
+        };
+      }
+      if (guestName.length > FIELD_LIMITS.name) {
+        return { error: "Second member name is too long." };
+      }
+      if (guestEmail.length > FIELD_LIMITS.email) {
+        return { error: "Second member email is too long." };
+      }
+      if (!isValidEmail(guestEmail)) {
+        return { error: "Please provide a valid second member email." };
+      }
+      if (!/^\d{10}$/.test(guestPhoneDigits)) {
+        return {
+          error: "Please provide a valid 10-digit second member mobile number.",
+        };
+      }
+      if (guestEmail === primaryEmail) {
+        return {
+          error: "Second member email must be different from yours.",
+        };
+      }
+      normalizedGuests.push({
+        name: guestName,
+        email: guestEmail,
+        phone: `${code} ${guestPhoneDigits}`.trim(),
+      });
+    }
+
+    return {
+      data: {
+        name: name.trim(),
+        email: primaryEmail,
+        phone: `${code} ${localPhoneDigits}`.trim(),
+        countryCode: code,
+        linkedin: "https://www.linkedin.com/in/not-provided",
+        role: "Other",
+        company: "Guest",
+        startupStage: "Exploring a startup idea",
+        gtmChallenges: [
+          "Preparing for launch",
+          "Finding our first paying customers",
+          "Other",
+        ],
+        leaveWith: ["Other"],
+        industry: "Other",
+        lookingFor: ["Networking"],
+        offerCommunity: ["Other"],
+        wantToMeet: ["Other"],
+        canHelpWith: "",
+        biggestChallenge: "",
+        joinWhatsapp: false,
+        subscribeUpdates: false,
+        questions: "",
+        heardAboutEvent: "Trizen Community",
+        heardAboutEventOther: "",
+        ticketId: trimStr(ticketId).toLowerCase(),
+        formMode: "minimal",
+        guests: normalizedGuests,
+        event: {
+          slug: event.slug.trim(),
+          title: event.title.trim(),
+          dateISO: event.dateISO.trim(),
+          dateLabel: event.dateLabel.trim(),
+          time: event.time.trim(),
+          venue: event.venue.trim(),
+          city: event.city.trim(),
+          format: event.format.trim(),
+        },
+        mapsUrl: typeof event.mapsUrl === "string" ? event.mapsUrl : "",
+        localPhoneDigits,
+      },
+    };
+  }
 
   if (
     !isNonEmptyString(name) ||
@@ -283,8 +413,8 @@ function validateRegistrationBody(body) {
     return { error: "Please select a valid role." };
   }
 
-  const eventSlug = trimStr(event?.slug);
-  if (eventSlug && !isRoleAllowed(eventSlug, role)) {
+  const eventSlugForRole = trimStr(event?.slug);
+  if (eventSlugForRole && !isRoleAllowed(eventSlugForRole, role)) {
     return { error: "Please select a valid role for this event." };
   }
 
@@ -403,6 +533,9 @@ function validateRegistrationBody(body) {
       questions: trimStr(questions),
       heardAboutEvent: heardAbout,
       heardAboutEventOther: heardAbout === "Other" ? heardAboutOther : "",
+      ticketId: trimStr(ticketId).toLowerCase(),
+      formMode: "full",
+      guests: [],
       event: {
         slug: event.slug.trim(),
         title: event.title.trim(),
@@ -488,6 +621,8 @@ router.get("/config", async (req, res) => {
             ).toString("base64url")}`
           : method.qrImageUrl,
       })),
+      tickets: payment.tickets || [],
+      formMode: payment.formMode || "full",
       hasRazorpay: payment.hasRazorpay,
       hasManualMethods: payment.hasManualMethods,
       enabled: payment.enabled,
@@ -626,7 +761,21 @@ router.post("/manual-confirm", async (req, res) => {
       });
     }
 
-    const amountInr = payment.amountInr || REGISTRATION_FEE_INR;
+    const selectedTicket = resolvePaymentTicket(payment, data.ticketId);
+    if ((payment.tickets || []).length > 0 && !selectedTicket) {
+      return res.status(400).json({
+        error: "Please select a valid ticket option.",
+      });
+    }
+    const requiredGuests = Math.max(0, (selectedTicket?.memberCount || 1) - 1);
+    const guests = Array.isArray(data.guests) ? data.guests : [];
+    if (requiredGuests > 0 && guests.length < requiredGuests) {
+      return res.status(400).json({
+        error: "Please provide details for the second member.",
+      });
+    }
+    const amountInr =
+      selectedTicket?.amountInr || payment.amountInr || REGISTRATION_FEE_INR;
     const rsvp = await Rsvp.create({
       name: data.name,
       email: data.email,
@@ -650,6 +799,7 @@ router.post("/manual-confirm", async (req, res) => {
       heardAboutEvent: data.heardAboutEvent,
       heardAboutEventOther: data.heardAboutEventOther,
       event: data.event,
+      guests: requiredGuests > 0 ? guests.slice(0, requiredGuests) : [],
       payment: {
         status: "pending_review",
         amountInr,
@@ -659,6 +809,9 @@ router.post("/manual-confirm", async (req, res) => {
         provider: provider || "manual",
         proofUrl: proofKey,
         note,
+        ticketId: selectedTicket?.id || "",
+        ticketLabel: selectedTicket?.label || "",
+        memberCount: selectedTicket?.memberCount || 1,
       },
     });
 

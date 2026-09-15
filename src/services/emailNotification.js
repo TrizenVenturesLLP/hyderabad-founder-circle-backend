@@ -52,6 +52,33 @@ function paymentPayload(payment) {
   };
 }
 
+/** Primary registrant plus any additional ticket members (unique emails). */
+function registrationRecipients(rsvp) {
+  const recipients = [
+    {
+      email: String(rsvp?.email || "")
+        .trim()
+        .toLowerCase(),
+      name: String(rsvp?.name || "").trim(),
+    },
+  ];
+  const guests = Array.isArray(rsvp?.guests) ? rsvp.guests : [];
+  for (const guest of guests) {
+    recipients.push({
+      email: String(guest?.email || "")
+        .trim()
+        .toLowerCase(),
+      name: String(guest?.name || "").trim(),
+    });
+  }
+  const seen = new Set();
+  return recipients.filter((r) => {
+    if (!r.email || seen.has(r.email)) return false;
+    seen.add(r.email);
+    return true;
+  });
+}
+
 /**
  * Generate invoice number: TZV/YY-YY/XXXXX
  * Uses last 5 alphanumeric chars of the Razorpay payment ID.
@@ -119,11 +146,6 @@ export async function sendRsvpConfirmationEmail({ rsvp, mapsUrl }) {
   const eventSlug = rsvp.event?.slug || "";
   const base = WEB_APP_URL.replace(/\/$/, "");
   const eventUrl = eventSlug ? `${base}/events/${eventSlug}` : base;
-  const badgeUrl = eventSlug
-    ? `${base}/badge?event=${encodeURIComponent(eventSlug)}${
-        rsvp.name ? `&name=${encodeURIComponent(String(rsvp.name).trim())}` : ""
-      }`
-    : `${base}/badge`;
 
   let space = "";
   let address = "";
@@ -146,9 +168,7 @@ export async function sendRsvpConfirmationEmail({ rsvp, mapsUrl }) {
   }
   if (!resolvedMapsUrl) resolvedMapsUrl = DEFAULT_MAPS_URL;
 
-  const serviceBody = {
-    email: rsvp.email,
-    name: rsvp.name,
+  const serviceBodyBase = {
     eventSlug,
     eventTitle: rsvp.event?.title,
     dateLabel,
@@ -160,73 +180,106 @@ export async function sendRsvpConfirmationEmail({ rsvp, mapsUrl }) {
     format: rsvp.event?.format,
     mapsUrl: resolvedMapsUrl,
     eventUrl,
-    badgeUrl,
     communityUrl: COMMUNITY_WHATSAPP_URL,
     supportEmail: "community@trizenventures.com",
     senderName: rsvp.event?.title || "Trizen Community",
     payment: paymentPayload(rsvp.payment),
   };
 
-  // Try microservice
-  const serviceResult = await postToEmailService("/api/v1/email/rsvp-confirmation", serviceBody);
-  if (serviceResult === true) {
-    console.log("[email] Confirmation sent via microservice to", rsvp.email);
-    return;
-  }
+  for (const recipient of registrationRecipients(rsvp)) {
+    const serviceBody = {
+      ...serviceBodyBase,
+      email: recipient.email,
+      name: recipient.name || recipient.email,
+      badgeUrl: eventSlug
+        ? `${base}/badge?event=${encodeURIComponent(eventSlug)}${
+            recipient.name
+              ? `&name=${encodeURIComponent(String(recipient.name).trim())}`
+              : ""
+          }`
+        : `${base}/badge`,
+    };
 
-  // Fallback: send directly
-  console.log("[email] Sending confirmation directly (SMTP fallback) to", rsvp.email);
-  try {
-    const rendered = buildRsvpConfirmationEmail({
-      ...serviceBody,
-      payment: null, // registration email has no payment block
-    });
-    await sendDirectMail({
-      to: rsvp.email,
-      subject: rendered.subject,
-      html: rendered.html,
-      text: rendered.text,
-      senderName: serviceBody.senderName,
-    });
-    console.log("[email] Confirmation sent directly to", rsvp.email);
-  } catch (err) {
-    console.error("[email] Direct confirmation send failed:", err instanceof Error ? err.message : err);
+    const serviceResult = await postToEmailService(
+      "/api/v1/email/rsvp-confirmation",
+      serviceBody,
+    );
+    if (serviceResult === true) {
+      console.log("[email] Confirmation sent via microservice to", recipient.email);
+      continue;
+    }
+
+    console.log(
+      "[email] Sending confirmation directly (SMTP fallback) to",
+      recipient.email,
+    );
+    try {
+      const rendered = buildRsvpConfirmationEmail({
+        ...serviceBody,
+        payment: null, // registration email has no payment block
+      });
+      await sendDirectMail({
+        to: recipient.email,
+        subject: rendered.subject,
+        html: rendered.html,
+        text: rendered.text,
+        senderName: serviceBody.senderName,
+      });
+      console.log("[email] Confirmation sent directly to", recipient.email);
+    } catch (err) {
+      console.error(
+        "[email] Direct confirmation send failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
   }
 }
 
 export async function sendPaymentReviewEmail({ rsvp }) {
-  const serviceBody = {
-    email: rsvp.email,
-    name: rsvp.name,
+  const serviceBodyBase = {
     eventSlug: rsvp.event?.slug || "",
     eventTitle: rsvp.event?.title || "Event registration",
     senderName: rsvp.event?.title || "Trizen Community",
   };
 
-  const serviceResult = await postToEmailService(
-    "/api/v1/email/payment-review",
-    serviceBody,
-  );
-  if (serviceResult === true) {
-    console.log("[email] Payment review email sent via microservice to", rsvp.email);
-    return;
-  }
+  for (const recipient of registrationRecipients(rsvp)) {
+    const serviceBody = {
+      ...serviceBodyBase,
+      email: recipient.email,
+      name: recipient.name || recipient.email,
+    };
 
-  const rendered = buildPaymentReviewEmail(serviceBody);
-  try {
-    await sendDirectMail({
-      to: rsvp.email,
-      subject: rendered.subject,
-      html: rendered.html,
-      text: rendered.text,
-      senderName: serviceBody.senderName,
-    });
-    console.log("[email] Payment review email sent directly to", rsvp.email);
-  } catch (err) {
-    console.error(
-      "[email] Direct payment review send failed:",
-      err instanceof Error ? err.message : err,
+    const serviceResult = await postToEmailService(
+      "/api/v1/email/payment-review",
+      serviceBody,
     );
+    if (serviceResult === true) {
+      console.log(
+        "[email] Payment review email sent via microservice to",
+        recipient.email,
+      );
+      continue;
+    }
+
+    const rendered = buildPaymentReviewEmail(serviceBody);
+    try {
+      await sendDirectMail({
+        to: recipient.email,
+        subject: rendered.subject,
+        html: rendered.html,
+        text: rendered.text,
+        senderName: serviceBody.senderName,
+      });
+      console.log(
+        "[email] Payment review email sent directly to",
+        recipient.email,
+      );
+    } catch (err) {
+      console.error(
+        "[email] Direct payment review send failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
   }
 }
 
@@ -259,9 +312,7 @@ export async function sendInvoiceEmailNotification({ rsvp }) {
     }
   }
 
-  const serviceBody = {
-    email: rsvp.email,
-    name: rsvp.name,
+  const serviceBodyBase = {
     amountInr,
     invoiceNumber,
     invoiceDate: invoiceDate.toISOString(),
@@ -274,56 +325,76 @@ export async function sendInvoiceEmailNotification({ rsvp }) {
     senderName: rsvp.event?.title || "Trizen Community",
   };
 
-  // Try microservice
-  const serviceResult = await postToEmailService("/api/v1/email/invoice", serviceBody);
-  if (serviceResult === true) {
-    console.log("[email] Invoice sent via microservice to", rsvp.email);
-    return;
-  }
+  let pdfBuffer = null;
+  for (const recipient of registrationRecipients(rsvp)) {
+    const serviceBody = {
+      ...serviceBodyBase,
+      email: recipient.email,
+      name: recipient.name || recipient.email,
+    };
 
-  // Fallback: generate PDF + send directly
-  console.log("[email] Sending invoice directly (SMTP fallback) to", rsvp.email);
-  try {
-    const pdfBuffer = await generateInvoicePdf({
-      invoiceNumber,
-      invoiceDate,
-      billToName: rsvp.name,
-      billToEmail: rsvp.email,
-      eventTitle: rsvp.event?.title || "",
-      amountInr,
-    });
+    const serviceResult = await postToEmailService(
+      "/api/v1/email/invoice",
+      serviceBody,
+    );
+    if (serviceResult === true) {
+      console.log("[email] Invoice sent via microservice to", recipient.email);
+      continue;
+    }
 
-    const safeNum = invoiceNumber.replace(/[^a-zA-Z0-9_\-]/g, "_");
-    const rendered = buildInvoiceEmail({
-      name: rsvp.name,
-      email: rsvp.email,
-      amountInr,
-      invoiceNumber,
-      invoiceDate,
-      eventTitle: rsvp.event?.title || "",
-      eventDate,
-      eventTime: rsvp.event?.time || "",
-      eventVenue: [rsvp.event?.venue, rsvp.event?.city].filter(Boolean).join(", "),
-      razorpayPaymentId: payment?.razorpayPaymentId || "",
-    });
+    console.log(
+      "[email] Sending invoice directly (SMTP fallback) to",
+      recipient.email,
+    );
+    try {
+      if (!pdfBuffer) {
+        pdfBuffer = await generateInvoicePdf({
+          invoiceNumber,
+          invoiceDate,
+          billToName: rsvp.name,
+          billToEmail: rsvp.email,
+          eventTitle: rsvp.event?.title || "",
+          amountInr,
+        });
+      }
 
-    await sendDirectMail({
-      to: rsvp.email,
-      subject: rendered.subject,
-      html: rendered.html,
-      text: rendered.text,
-      senderName: serviceBody.senderName,
-      attachments: [
-        {
-          filename: `Invoice_${safeNum}.pdf`,
-          content: pdfBuffer.toString("base64"),
-          contentType: "application/pdf",
-        },
-      ],
-    });
-    console.log("[email] Invoice sent directly to", rsvp.email);
-  } catch (err) {
-    console.error("[email] Direct invoice send failed:", err instanceof Error ? err.message : err);
+      const safeNum = invoiceNumber.replace(/[^a-zA-Z0-9_\-]/g, "_");
+      const rendered = buildInvoiceEmail({
+        name: recipient.name || recipient.email,
+        email: recipient.email,
+        amountInr,
+        invoiceNumber,
+        invoiceDate,
+        eventTitle: rsvp.event?.title || "",
+        eventDate,
+        eventTime: rsvp.event?.time || "",
+        eventVenue: [rsvp.event?.venue, rsvp.event?.city]
+          .filter(Boolean)
+          .join(", "),
+        razorpayPaymentId: payment?.razorpayPaymentId || "",
+      });
+
+      await sendDirectMail({
+        to: recipient.email,
+        subject: rendered.subject,
+        html: rendered.html,
+        text: rendered.text,
+        senderName: serviceBody.senderName,
+        attachments: [
+          {
+            filename: `Invoice_${safeNum}.pdf`,
+            content: pdfBuffer.toString("base64"),
+            contentType: "application/pdf",
+          },
+        ],
+      });
+      console.log("[email] Invoice sent directly to", recipient.email);
+    } catch (err) {
+      console.error(
+        "[email] Direct invoice send failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
   }
 }
 

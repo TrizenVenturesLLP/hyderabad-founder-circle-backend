@@ -12,8 +12,13 @@ import adminEventsRouter from "./routes/admin/events.js";
 import adminEmailsRouter from "./routes/admin/emails.js";
 import adminOrgApplicationsRouter from "./routes/admin/orgApplications.js";
 import orgApplicationsRouter from "./routes/orgApplications.js";
+import {
+  analyticsPublicRouter,
+  analyticsAdminRouter,
+} from "./routes/analytics.js";
 import { seedAdminAndEvents } from "./services/seed.js";
 import { ensureRsvpIndexes } from "./services/ensureRsvpIndexes.js";
+import { Event } from "./models/Event.js";
 
 const PORT = Number(process.env.PORT) || 80;
 const MONGODB_URI = process.env.MONGODB_URI || "";
@@ -95,6 +100,51 @@ app.get("/health", (_req, res) => {
   });
 });
 
+app.get("/sitemap.xml", async (_req, res) => {
+  try {
+    const site =
+      process.env.WEB_APP_URL?.replace(/\/$/, "") ||
+      "https://community.trizenventures.com";
+    const staticPaths = ["/", "/events", "/about", "/contact", "/host"];
+    let eventPaths = [];
+    if (mongoReady) {
+      const events = await Event.find({})
+        .select("slug updatedAt")
+        .lean();
+      eventPaths = events
+        .filter((e) => e.slug)
+        .map((e) => ({
+          loc: `${site}/events/${e.slug}`,
+          lastmod: e.updatedAt
+            ? new Date(e.updatedAt).toISOString().slice(0, 10)
+            : undefined,
+        }));
+    }
+    const urls = [
+      ...staticPaths.map((p) => ({ loc: `${site}${p}` })),
+      ...eventPaths,
+    ];
+    const body = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls
+  .map(
+    (u) => `  <url>
+    <loc>${u.loc}</loc>${
+      u.lastmod ? `\n    <lastmod>${u.lastmod}</lastmod>` : ""
+    }
+  </url>`,
+  )
+  .join("\n")}
+</urlset>`;
+    res.setHeader("Content-Type", "application/xml; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    return res.send(body);
+  } catch (err) {
+    console.error("[sitemap]", err);
+    return res.status(500).type("text/plain").send("Sitemap unavailable");
+  }
+});
+
 app.use((req, res, next) => {
   if (!mongoReady && req.path.startsWith("/api/")) {
     return res.status(503).json({
@@ -108,12 +158,14 @@ app.use("/api/rsvp", rsvpRouter);
 app.use("/api/payments", paymentsRouter);
 app.use("/api/contact", contactRouter);
 app.use("/api/events", eventsRouter);
+app.use("/api/analytics", analyticsPublicRouter);
 app.use("/api/admin/auth", adminAuthRouter);
 app.use("/api/admin/rsvps", adminRsvpsRouter);
 app.use("/api/admin/contacts", adminContactsRouter);
 app.use("/api/admin/events", adminEventsRouter);
 app.use("/api/admin/emails", adminEmailsRouter);
 app.use("/api/admin/org-applications", adminOrgApplicationsRouter);
+app.use("/api/admin/analytics", analyticsAdminRouter);
 app.use("/api/org-applications", orgApplicationsRouter);
 
 async function connectMongoWithRetry() {

@@ -48,12 +48,23 @@ const paymentMethodSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const paymentTicketSchema = new mongoose.Schema(
+  {
+    id: { type: String, trim: true, required: true },
+    label: { type: String, trim: true, default: "" },
+    amountInr: { type: Number, required: true },
+    memberCount: { type: Number, default: 1 },
+  },
+  { _id: false },
+);
+
 const paymentConfigSchema = new mongoose.Schema(
   {
     enabled: { type: Boolean, default: true },
     amountInr: { type: Number, default: 99 },
     currency: { type: String, trim: true, default: "INR" },
     methods: { type: [paymentMethodSchema], default: [] },
+    tickets: { type: [paymentTicketSchema], default: [] },
   },
   { _id: false },
 );

@@ -65,8 +65,22 @@ const DEFAULT_PAYMENT = {
 
 const BAND_EXPLORERS_PAYMENT = {
   enabled: true,
-  amountInr: 599,
+  amountInr: 399,
   currency: "INR",
+  tickets: [
+    {
+      id: "solo",
+      label: "1 member",
+      amountInr: 399,
+      memberCount: 1,
+    },
+    {
+      id: "duo",
+      label: "2 members",
+      amountInr: 699,
+      memberCount: 2,
+    },
+  ],
   methods: [
     {
       type: "upi_qr",
@@ -77,7 +91,7 @@ const BAND_EXPLORERS_PAYMENT = {
       qrImageUrl:
         "minio:event-qr/band-explorers-vybe/payment-qr.png",
       instructions:
-        "Scan the QR code to pay ₹599. For queries call +91 8247579912. No snacks included.",
+        "Choose 1 member (₹399) or 2 members (₹699), scan the QR, pay the selected amount, then upload the payment screenshot.",
     },
   ],
 };
@@ -172,7 +186,7 @@ const NANOSPACE_SEED_EVENTS = [
     ...bandExplorersVenue,
     status: "open",
     blurb:
-      "Live music · Unwind · Connect. Up to 10 members can pitch their problem statements (2 minutes each). Timings 6:00 PM – 9:00 PM at NanoSpace. No snacks. Marketing partner: Trizen Community. Entry ₹599.",
+      "Live music · Unwind · Connect. Tickets: ₹399 for 1 member or ₹699 for 2 members. Timings 6:00 PM – 9:00 PM at NanoSpace. No snacks. Marketing partner: Trizen Community.",
     sortOrder: 1,
     published: true,
     payment: BAND_EXPLORERS_PAYMENT,
