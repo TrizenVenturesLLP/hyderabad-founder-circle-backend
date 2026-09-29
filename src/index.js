@@ -19,6 +19,7 @@ import {
 import { seedAdminAndEvents } from "./services/seed.js";
 import { ensureRsvpIndexes } from "./services/ensureRsvpIndexes.js";
 import { Event } from "./models/Event.js";
+import hackathonRouter from "./routes/hackathon.js";
 
 const PORT = Number(process.env.PORT) || 80;
 const MONGODB_URI = process.env.MONGODB_URI || "";
@@ -108,9 +109,7 @@ app.get("/sitemap.xml", async (_req, res) => {
     const staticPaths = ["/", "/events", "/about", "/contact", "/host"];
     let eventPaths = [];
     if (mongoReady) {
-      const events = await Event.find({})
-        .select("slug updatedAt")
-        .lean();
+      const events = await Event.find({}).select("slug updatedAt").lean();
       eventPaths = events
         .filter((e) => e.slug)
         .map((e) => ({
@@ -167,6 +166,7 @@ app.use("/api/admin/emails", adminEmailsRouter);
 app.use("/api/admin/org-applications", adminOrgApplicationsRouter);
 app.use("/api/admin/analytics", analyticsAdminRouter);
 app.use("/api/org-applications", orgApplicationsRouter);
+app.use("/api/hackathon", hackathonRouter);
 
 async function connectMongoWithRetry() {
   if (!MONGODB_URI) {
@@ -192,14 +192,14 @@ async function connectMongoWithRetry() {
           indexErr instanceof Error ? indexErr.message : indexErr,
         );
       }
-      try {
-        await seedAdminAndEvents();
+      /*try {
+        // await seedAdminAndEvents();
       } catch (seedErr) {
         console.error(
           "[seed] Failed:",
           seedErr instanceof Error ? seedErr.message : seedErr,
         );
-      }
+      }*/
       return;
     } catch (err) {
       mongoReady = false;
@@ -208,11 +208,15 @@ async function connectMongoWithRetry() {
         err instanceof Error ? err.message : err,
       );
       if (attempt < maxAttempts) {
-        await new Promise((r) => setTimeout(r, Math.min(attempt * 1500, 10000)));
+        await new Promise((r) =>
+          setTimeout(r, Math.min(attempt * 1500, 10000)),
+        );
       }
     }
   }
-  console.error("Could not connect to MongoDB after retries. API will stay degraded.");
+  console.error(
+    "Could not connect to MongoDB after retries. API will stay degraded.",
+  );
 }
 
 async function start() {
