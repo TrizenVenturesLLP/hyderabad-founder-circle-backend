@@ -4,6 +4,7 @@ import {
   buildPaymentReviewEmail,
   buildInvoiceEmail,
   buildAdminCustomEmail,
+  buildHackathonTeamInvitationEmail,
 } from "../lib/emailTemplates.js";
 import { generateInvoicePdf } from "../lib/invoicePdf.js";
 
@@ -486,4 +487,75 @@ export async function sendCustomEmails({ subject, body, recipients, attachments 
   }
 
   return results;
+}
+
+export async function sendHackathonTeamInvitations({ team, members = [] }) {
+  const teamLeadEmail = String(team?.email || "").trim().toLowerCase();
+  const seenEmails = new Set([teamLeadEmail]);
+  const invitees = members.filter((member) => {
+    const email = String(member?.email || "").trim().toLowerCase();
+    if (!email || seenEmails.has(email)) return false;
+    seenEmails.add(email);
+    return true;
+  });
+  const loginUrl = `${WEB_APP_URL.replace(/\/$/, "")}/hackathon/login`;
+
+  const results = await Promise.all(
+    invitees.map(async (member) => {
+      const email = String(member.email).trim().toLowerCase();
+      const name = String(member.full_name || "").trim();
+      const invitationUrl = `${loginUrl}?email=${encodeURIComponent(email)}`;
+      const rendered = buildHackathonTeamInvitationEmail({
+        name,
+        teamName: team.team_name,
+        teamLead: team.lead_name,
+        teamLeadEmail: team.email,
+        memberEmail: email,
+        memberPhone: String(member.phone || "").trim(),
+        registrationUrl: invitationUrl,
+      });
+      const message = {
+        to: email,
+        name,
+        subject: rendered.subject,
+        html: rendered.html,
+        text: rendered.text,
+        supportEmail: "community@trizenventures.com",
+      };
+
+      try {
+        if (!EMAIL_SERVICE_AUTH_TOKEN) {
+          throw new Error(
+            "EMAIL_SERVICE_AUTH_TOKEN is not configured in the backend environment.",
+          );
+        }
+
+        const sentByService = await postToEmailService(
+          "/api/v1/email/send",
+          message,
+          20000,
+        );
+        if (sentByService === true) return true;
+        if (sentByService === false) return false;
+
+        await sendDirectMail({
+          ...message,
+          senderName: "Hyderabad Founders Network",
+        });
+        return true;
+      } catch (error) {
+        console.error(
+          "[hackathon-invitation] Email delivery failed:",
+          error instanceof Error ? error.message : error,
+        );
+        return false;
+      }
+    }),
+  );
+
+  return {
+    attempted: results.length,
+    sent: results.filter(Boolean).length,
+    failed: results.filter((sent) => !sent).length,
+  };
 }

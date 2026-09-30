@@ -60,6 +60,18 @@ const hackathonSchema = new mongoose.Schema(
       submitted_at: { type: Date, default: null },
     },
 
+    evaluation: {
+      scores: {
+        problem_understanding: { type: Number, min: 0, max: 10, required: true },
+        innovation_creativity: { type: Number, min: 0, max: 10, required: true },
+        technical_implementation: { type: Number, min: 0, max: 10, required: true },
+        functionality_execution: { type: Number, min: 0, max: 10, required: true },
+        communication_presentation: { type: Number, min: 0, max: 10, required: true },
+      },
+      comments: { type: String, default: "", maxlength: 2000 },
+      evaluated_at: { type: Date, default: null },
+    },
+
     status: {
       type: String,
       enum: ["active", "suspended"],

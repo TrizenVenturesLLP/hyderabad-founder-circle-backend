@@ -74,7 +74,7 @@ export function wrapAdminEmailHtml({ title = "Hyderabad Founders Network", bodyH
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f1ea;padding:32px 16px;">
 <tr><td align="center">
 <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.08);">
-<tr><td style="background:#1f1a17;color:#fff;padding:14px 24px;font-size:13px;letter-spacing:.08em;text-align:center;text-transform:uppercase;">${eventTitle}</td></tr>
+<tr><td style="background:#1f1a17;color:#fff;padding:14px 24px;font-size:13px;letter-spacing:.08em;text-align:center;text-transform:uppercase;">${heading}</td></tr>
 <tr><td style="padding:28px 32px 8px;">
 ${bodyHtml}
 </td></tr>
@@ -113,6 +113,87 @@ export function buildAdminCustomEmail({ subject, body }) {
         .trim();
 
   return { subject: String(subject || "").trim(), html: htmlBody, text };
+}
+
+export function buildHackathonTeamInvitationEmail({
+  name,
+  teamName,
+  teamLead,
+  teamLeadEmail,
+  memberEmail,
+  memberPhone,
+  registrationUrl,
+}) {
+  const safeName = esc(name || "there");
+  const safeTeamName = esc(teamName || "your hackathon team");
+  const safeTeamLead = esc(teamLead || "Your team lead");
+  const safeLeadEmail = esc(teamLeadEmail || "");
+  const safeMemberEmail = esc(memberEmail || "");
+  const safeMemberPhone = esc(memberPhone || "");
+  const safeUrl = esc(registrationUrl || "");
+  const subject = `You're invited to join ${teamName || "a team"} at the hackathon`;
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>${esc(subject)}</title>
+</head>
+<body style="margin:0;padding:0;background:#f2f3f8;font-family:Arial,Helvetica,sans-serif;color:#20213a;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f2f3f8;padding:32px 12px;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:100%;max-width:600px;background:#ffffff;border:1px solid #e3e5ed;border-radius:12px;overflow:hidden;">
+        <tr><td style="padding:22px 28px;background:#24204f;color:#ffffff;">
+          <p style="margin:0;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#d8d4ff;">Trizen Ventures · Hackathon</p>
+          <h1 style="margin:12px 0 0;font-size:26px;line-height:1.2;color:#ffffff;">You're on the team</h1>
+        </td></tr>
+        <tr><td style="padding:28px;">
+          <p style="margin:0 0 12px;font-size:16px;line-height:1.6;">Hi ${safeName},</p>
+          <p style="margin:0 0 22px;font-size:15px;line-height:1.65;color:#51556d;">${safeTeamLead} invited you to join <strong style="color:#20213a;">${safeTeamName}</strong>. You're one of the team members for the hackathon.</p>
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 24px;background:#f7f7fb;border:1px solid #e6e7ef;border-radius:8px;">
+            <tr><td style="padding:16px 18px;">
+              <p style="margin:0 0 5px;font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#777b94;">Your team</p>
+              <p style="margin:0 0 14px;font-size:18px;font-weight:700;color:#24204f;">${safeTeamName}</p>
+              <p style="margin:0;font-size:13px;line-height:1.6;color:#51556d;">Team lead: <strong style="color:#20213a;">${safeTeamLead}</strong><br>Email: <a href="mailto:${safeLeadEmail}" style="color:#5146a8;text-decoration:underline;overflow-wrap:anywhere;">${safeLeadEmail}</a></p>
+            </td></tr>
+          </table>
+          <p style="margin:0 0 18px;font-size:13px;line-height:1.6;color:#51556d;">Use your registered email <strong style="color:#20213a;">${safeMemberEmail}</strong> and mobile number <strong style="color:#20213a;">${safeMemberPhone}</strong> to log in.</p>
+          <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 auto 20px;">
+            <tr><td align="center" bgcolor="#5146a8" style="border-radius:6px;">
+              <a href="${safeUrl}" style="display:inline-block;padding:13px 24px;border:1px solid #5146a8;border-radius:6px;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;">Join your team</a>
+            </td></tr>
+          </table>
+          <p style="margin:0 0 7px;font-size:12px;line-height:1.5;color:#777b94;">Button not working? Copy this link into your browser:</p>
+          <p style="margin:0;font-size:12px;line-height:1.6;overflow-wrap:anywhere;word-break:break-all;"><a href="${safeUrl}" style="color:#5146a8;text-decoration:underline;overflow-wrap:anywhere;word-break:break-all;">${safeUrl}</a></p>
+          <p style="margin:24px 0 0;font-size:14px;line-height:1.6;color:#51556d;">We look forward to building with you.</p>
+        </td></tr>
+        <tr><td style="padding:16px 28px;background:#fafafe;border-top:1px solid #ececf2;text-align:center;">
+          <p style="margin:0;font-size:12px;line-height:1.6;color:#777b94;">Hyderabad Founders Network · Supported by Trizen Ventures</p>
+          <a href="mailto:community@trizenventures.com" style="font-size:12px;line-height:1.8;color:#5146a8;text-decoration:none;">community@trizenventures.com</a>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+  const text = [
+    `Hi ${name || "there"},`,
+    "",
+    `${teamLead || "Your team lead"} invited you to join ${teamName || "your hackathon team"}.`,
+    "",
+    `Team: ${teamName || ""}`,
+    `Team lead: ${teamLead || ""}`,
+    `Team lead email: ${teamLeadEmail || ""}`,
+    `Login email: ${memberEmail || ""}`,
+    `Login mobile: ${memberPhone || ""}`,
+    "",
+    `Join your team: ${registrationUrl || ""}`,
+    "",
+    "Hyderabad Founders Network",
+    "community@trizenventures.com",
+  ].join("\n");
+
+  return { subject, html, text };
 }
 
 // ── Registration Confirmation ─────────────────────────────────────────────────

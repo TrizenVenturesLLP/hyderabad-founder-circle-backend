@@ -1,4 +1,5 @@
 import "dotenv/config";
+import dns from "node:dns";
 import express from "express";
 import mongoose from "mongoose";
 import rsvpRouter from "./routes/rsvp.js";
@@ -24,6 +25,29 @@ import hackathonRouter from "./routes/hackathon.js";
 const PORT = Number(process.env.PORT) || 80;
 const MONGODB_URI = process.env.MONGODB_URI || "";
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "";
+const DNS_FALLBACK_SERVERS = ["8.8.8.8", "8.8.4.4"];
+
+function configureDnsFallback() {
+  try {
+    dns.setServers(DNS_FALLBACK_SERVERS);
+  } catch (error) {
+    console.warn(
+      "Unable to override DNS servers for MongoDB; continuing with platform defaults.",
+      error,
+    );
+  }
+
+  try {
+    dns.setDefaultResultOrder?.("ipv4first");
+  } catch (error) {
+    console.warn(
+      "Unable to set IPv4-first DNS result order; continuing with platform defaults.",
+      error,
+    );
+  }
+}
+
+configureDnsFallback();
 
 /** Always allow these production frontends even if CapRover CORS_ORIGIN is outdated. */
 const HARDCODED_ORIGINS = [
@@ -181,6 +205,7 @@ async function connectMongoWithRetry() {
     try {
       await mongoose.connect(MONGODB_URI, {
         serverSelectionTimeoutMS: 10000,
+        family: 4,
       });
       mongoReady = true;
       console.log("Connected to MongoDB");
