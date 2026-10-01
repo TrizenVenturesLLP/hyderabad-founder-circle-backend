@@ -25,6 +25,7 @@ const hackathonJuryEvaluationSchema = new mongoose.Schema(
       ref: "JuryUser",
       required: true,
     },
+    round: { type: Number, default: 1, min: 1 },
     rubricVersion: { type: Number, required: true, min: 1 },
     criteriaScores: { type: [criterionScoreSchema], default: [] },
     totalScore: { type: Number, default: 0, min: 0, max: 100 },
@@ -42,10 +43,11 @@ const hackathonJuryEvaluationSchema = new mongoose.Schema(
 );
 
 hackathonJuryEvaluationSchema.index(
-  { hackathonId: 1, teamId: 1, juryMemberId: 1 },
+  { hackathonId: 1, teamId: 1, juryMemberId: 1, round: 1 },
   { unique: true },
 );
 hackathonJuryEvaluationSchema.index({ hackathonId: 1, status: 1 });
+hackathonJuryEvaluationSchema.index({ hackathonId: 1, round: 1, status: 1 });
 
 export const HackathonJuryEvaluation = mongoose.model(
   "HackathonJuryEvaluation",

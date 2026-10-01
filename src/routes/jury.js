@@ -9,7 +9,15 @@ import { HackathonJuryInvitation } from "../models/HackathonJuryInvitation.js";
 import { HackathonJuryMembership } from "../models/HackathonJuryMembership.js";
 import { HackathonJuryEvaluation } from "../models/HackathonJuryEvaluation.js";
 import { ProblemStatement } from "../models/ProblemStatement.js";
-import { buildHackathonLeaderboard } from "../services/hackathonLeaderboard.js";
+import {
+  buildHackathonLeaderboard,
+  claimedStatementIds,
+  juryWorkload,
+  parseRound,
+  teamRound,
+  teamRoundOutcome,
+  teamRoundTotals,
+} from "../services/hackathonLeaderboard.js";
 import {
   requireJury,
   signJuryToken,
@@ -173,13 +181,33 @@ async function loadProgramAndMembership(req, res) {
   return program;
 }
 
-async function loadTeam(program, teamId) {
-  if (!mongoose.Types.ObjectId.isValid(teamId)) return null;
-  return Hackathon.findOne({
-    _id: teamId,
-    hackathonId: program._id,
-    status: "active",
-  });
+/**
+ * Loads an active team the signed-in Jury member scores — one whose problem statement
+ * they claimed. Sends the error response and returns null otherwise.
+ */
+async function loadAssignedTeam(req, res, program) {
+  const teamId = req.params.teamId;
+  const team = mongoose.Types.ObjectId.isValid(teamId)
+    ? await Hackathon.findOne({ _id: teamId, hackathonId: program._id, status: "active" })
+    : null;
+  if (!team) {
+    res.status(404).json({ error: "Team not found in this Hackathon." });
+    return null;
+  }
+  const owned =
+    team.problem_statement_id &&
+    (await ProblemStatement.exists({
+      hackathonId: program._id,
+      id: team.problem_statement_id,
+      claimedBy: req.juryUser.id,
+    }));
+  if (!owned) {
+    res.status(403).json({
+      error: "Only the Jury member who claimed this team's problem statement can view or score it.",
+    });
+    return null;
+  }
+  return team;
 }
 
 function teamSummary(team) {
@@ -198,6 +226,7 @@ function teamSummary(team) {
     teamName: team.team_name,
     members,
     problemStatementId: team.problem_statement_id,
+    round: teamRound(team),
     submission: {
       description: team.submission?.description || "",
       githubRepo: team.submission?.github_repo || "",
@@ -440,20 +469,13 @@ router.get("/hackathons", async (req, res) => {
           membership.hackathonId,
         ).lean();
         if (!program) return null;
-        const [teamCount, statementCount, evaluatedCount] = await Promise.all([
-          Hackathon.countDocuments({
-            hackathonId: program._id,
-            status: "active",
-          }),
+        const [totals, statementCount, workload] = await Promise.all([
+          teamRoundTotals(program._id),
           ProblemStatement.countDocuments({
             hackathonId: program._id,
             ...LIVE_STATEMENT_FILTER,
           }),
-          HackathonJuryEvaluation.countDocuments({
-            hackathonId: program._id,
-            juryMemberId: req.juryUser.id,
-            status: "submitted",
-          }),
+          juryWorkload(program._id, req.juryUser.id),
         ]);
         return {
           id: String(program._id),
@@ -463,10 +485,14 @@ router.get("/hackathons", async (req, res) => {
           status: program.status,
           startDate: program.startDate,
           endDate: program.endDate,
-          teamCount,
+          teamCount: workload.teamCount,
+          totalTeamCount: totals.teamCount,
           statementCount,
-          evaluatedCount,
-          pendingEvaluations: Math.max(0, teamCount - evaluatedCount),
+          claimedCount: workload.claimedCount,
+          claimLimit: program.juryClaimLimit ?? 20,
+          evaluatedCount: workload.evaluated,
+          pendingEvaluations: workload.pending,
+          maxRound: totals.maxRound,
         };
       }),
     );
@@ -483,17 +509,13 @@ router.get("/hackathons/:hackathonId", async (req, res) => {
   try {
     const program = await loadProgramAndMembership(req, res);
     if (!program) return;
-    const [teamCount, statementCount, evaluatedCount] = await Promise.all([
-      Hackathon.countDocuments({ hackathonId: program._id, status: "active" }),
+    const [totals, statementCount, workload] = await Promise.all([
+      teamRoundTotals(program._id),
       ProblemStatement.countDocuments({
         hackathonId: program._id,
         ...LIVE_STATEMENT_FILTER,
       }),
-      HackathonJuryEvaluation.countDocuments({
-        hackathonId: program._id,
-        juryMemberId: req.juryUser.id,
-        status: "submitted",
-      }),
+      juryWorkload(program._id, req.juryUser.id),
     ]);
     return res.json({
       hackathon: {
@@ -505,10 +527,14 @@ router.get("/hackathons/:hackathonId", async (req, res) => {
         startDate: program.startDate,
         endDate: program.endDate,
         rubric: program.rubric,
-        teamCount,
+        teamCount: workload.teamCount,
+        totalTeamCount: totals.teamCount,
         statementCount,
-        evaluatedCount,
-        pendingEvaluations: Math.max(0, teamCount - evaluatedCount),
+        claimedCount: workload.claimedCount,
+        claimLimit: program.juryClaimLimit ?? 20,
+        evaluatedCount: workload.evaluated,
+        pendingEvaluations: workload.pending,
+        maxRound: totals.maxRound,
       },
     });
   } catch (error) {
@@ -521,8 +547,17 @@ router.get("/hackathons/:hackathonId/leaderboard", async (req, res) => {
   try {
     const program = await loadProgramAndMembership(req, res);
     if (!program) return;
-    const leaderboard = await buildHackathonLeaderboard(program._id);
+    const leaderboard = await buildHackathonLeaderboard(
+      program._id,
+      parseRound(req.query.round, 1),
+    );
     return res.json({
+      round: leaderboard.round,
+      maxRound: leaderboard.maxRound,
+      result: leaderboard.result
+        ? { cutoff: leaderboard.result.cutoff, decidedAt: leaderboard.result.decidedAt }
+        : null,
+      scoringComplete: leaderboard.scoringComplete,
       requiredEvaluations: leaderboard.requiredEvaluations,
       items: leaderboard.items.map((entry) => ({
         teamId: entry.teamId,
@@ -530,6 +565,9 @@ router.get("/hackathons/:hackathonId/leaderboard", async (req, res) => {
         submittedEvaluations: entry.submittedEvaluations,
         totalJuryMembers: entry.totalJuryMembers,
         averageScore: entry.averageScore,
+        advanced: entry.advanced,
+        qualification: entry.qualification,
+        roundScores: entry.roundScores,
         rank: entry.rank,
       })),
     });
@@ -552,14 +590,44 @@ router.get("/hackathons/:hackathonId/problem-statements", async (req, res) => {
     })
       .select("-reviewedBy")
       .populate("createdBy", "name")
+      .populate("claimedBy", "name")
       .sort({ createdAt: -1 })
       .lean();
-    return res.json({
-      statements: statements.map((statement) => ({
+    const teams = await Hackathon.find({
+      hackathonId: program._id,
+      problem_statement_id: { $nin: [null, ""] },
+    })
+      .select("team_name problem_statement_id")
+      .sort({ team_name: 1 })
+      .lean();
+    const teamNamesById = new Map();
+    for (const team of teams) {
+      const names = teamNamesById.get(team.problem_statement_id) || [];
+      names.push(team.team_name);
+      teamNamesById.set(team.problem_statement_id, names);
+    }
+    let claimedCount = 0;
+    const items = statements.map(({ claimedBy, proposedByTeam, ...statement }) => {
+      const claimedByMe = String(claimedBy?._id || "") === req.juryUser.id;
+      if (claimedByMe) claimedCount += 1;
+      const teamNames = teamNamesById.get(statement.id) || [];
+      return {
         ...statement,
+        teamProposal: Boolean(proposedByTeam),
+        teamCount: teamNames.length,
+        // Team names are hidden only on statements another Jury member owns.
+        confirmedTeams: claimedByMe || !claimedBy ? teamNames : [],
         status: statement.status || "active",
         createdByMe: String(statement.createdBy?._id || "") === req.juryUser.id,
-      })),
+        claimed: Boolean(claimedBy),
+        claimedByMe,
+        claimedByName: claimedBy?.name || "",
+      };
+    });
+    return res.json({
+      statements: items,
+      claimLimit: program.juryClaimLimit ?? 20,
+      claimedCount,
     });
   } catch (error) {
     console.error("[jury/problem statements]", error);
@@ -658,31 +726,173 @@ router.post("/hackathons/:hackathonId/problem-statements", async (req, res) => {
   }
 });
 
+router.post(
+  "/hackathons/:hackathonId/problem-statements/:statementId/claim",
+  async (req, res) => {
+    try {
+      const program = await loadProgramAndMembership(req, res);
+      if (!program) return;
+      const limit = program.juryClaimLimit ?? 20;
+      const statementId = String(req.params.statementId || "").trim().toUpperCase();
+      const claimedCount = await ProblemStatement.countDocuments({
+        hackathonId: program._id,
+        claimedBy: req.juryUser.id,
+      });
+      if (claimedCount >= limit) {
+        return res.status(409).json({
+          error: `You can claim up to ${limit} problem statements for this Hackathon.`,
+        });
+      }
+      const statement = await ProblemStatement.findOneAndUpdate(
+        {
+          hackathonId: program._id,
+          id: statementId,
+          claimedBy: null,
+          ...LIVE_STATEMENT_FILTER,
+        },
+        { $set: { claimedBy: req.juryUser.id, claimedAt: new Date() } },
+        { new: true },
+      );
+      if (!statement) {
+        const existing = await ProblemStatement.findOne({
+          hackathonId: program._id,
+          id: statementId,
+        })
+          .select("claimedBy status")
+          .lean();
+        if (!existing) return res.status(404).json({ error: "Problem statement not found." });
+        if (existing.claimedBy) {
+          return res.status(409).json({
+            error:
+              String(existing.claimedBy) === req.juryUser.id
+                ? "You have already claimed this problem statement."
+                : "Another Jury member has already claimed this problem statement.",
+          });
+        }
+        return res
+          .status(409)
+          .json({ error: "Only live problem statements can be claimed." });
+      }
+      const afterCount = await ProblemStatement.countDocuments({
+        hackathonId: program._id,
+        claimedBy: req.juryUser.id,
+      });
+      if (afterCount > limit) {
+        await ProblemStatement.updateOne(
+          { _id: statement._id, claimedBy: req.juryUser.id },
+          { $set: { claimedBy: null, claimedAt: null } },
+        );
+        return res.status(409).json({
+          error: `You can claim up to ${limit} problem statements for this Hackathon.`,
+        });
+      }
+      return res.json({
+        statement: { id: statement.id, claimedAt: statement.claimedAt },
+        claimedCount: afterCount,
+        claimLimit: limit,
+      });
+    } catch (error) {
+      console.error("[jury/problem statement claim]", error);
+      return res.status(500).json({ error: "Could not claim problem statement." });
+    }
+  },
+);
+
+/** Blocked once the Jury member has scored a team on the statement, so scores aren't orphaned. */
+router.post(
+  "/hackathons/:hackathonId/problem-statements/:statementId/unclaim",
+  async (req, res) => {
+    try {
+      const program = await loadProgramAndMembership(req, res);
+      if (!program) return;
+      const statementId = String(req.params.statementId || "").trim().toUpperCase();
+      const statement = await ProblemStatement.findOne({
+        hackathonId: program._id,
+        id: statementId,
+        claimedBy: req.juryUser.id,
+      })
+        .select("_id")
+        .lean();
+      if (!statement) {
+        return res.status(404).json({ error: "You haven't claimed this problem statement." });
+      }
+      const teamIds = await Hackathon.distinct("_id", {
+        hackathonId: program._id,
+        problem_statement_id: statementId,
+      });
+      if (
+        teamIds.length &&
+        (await HackathonJuryEvaluation.exists({
+          hackathonId: program._id,
+          juryMemberId: req.juryUser.id,
+          teamId: { $in: teamIds },
+        }))
+      ) {
+        return res.status(409).json({
+          error:
+            "You've already started scoring a team on this statement, so it can't be unclaimed. Ask the admin to release it.",
+        });
+      }
+      await ProblemStatement.updateOne(
+        { _id: statement._id, claimedBy: req.juryUser.id },
+        { $set: { claimedBy: null, claimedAt: null } },
+      );
+      const claimedCount = await ProblemStatement.countDocuments({
+        hackathonId: program._id,
+        claimedBy: req.juryUser.id,
+      });
+      return res.json({ claimedCount, claimLimit: program.juryClaimLimit ?? 20 });
+    } catch (error) {
+      console.error("[jury/problem statement unclaim]", error);
+      return res.status(500).json({ error: "Could not unclaim problem statement." });
+    }
+  },
+);
+
 router.get("/hackathons/:hackathonId/teams", async (req, res) => {
   try {
     const program = await loadProgramAndMembership(req, res);
     if (!program) return;
+    const statementIds = await claimedStatementIds(program._id, req.juryUser.id);
     const [teams, evaluations] = await Promise.all([
-      Hackathon.find({ hackathonId: program._id, status: "active" })
+      Hackathon.find({
+        hackathonId: program._id,
+        status: "active",
+        problem_statement_id: { $in: statementIds },
+      })
         .sort({ createdAt: 1 })
         .lean(),
       HackathonJuryEvaluation.find({
         hackathonId: program._id,
         juryMemberId: req.juryUser.id,
       })
-        .select("teamId status totalScore")
+        .select("teamId round status totalScore")
         .lean(),
     ]);
-    const evaluationByTeam = new Map(
-      evaluations.map((evaluation) => [String(evaluation.teamId), evaluation]),
+    const evaluationByTeamRound = new Map(
+      evaluations.map((evaluation) => [
+        `${String(evaluation.teamId)}:${evaluation.round || 1}`,
+        evaluation,
+      ]),
     );
     return res.json({
       items: teams.map((team) => {
-        const evaluation = evaluationByTeam.get(String(team._id));
+        const round = teamRound(team);
+        const roundScores = Array.from({ length: round }, (_, index) => {
+          const evaluation = evaluationByTeamRound.get(`${String(team._id)}:${index + 1}`);
+          return {
+            round: index + 1,
+            status: evaluation?.status || "pending",
+            totalScore: evaluation ? evaluation.totalScore : null,
+          };
+        });
+        const current = roundScores[round - 1];
         return {
           ...teamSummary(team),
-          evaluationStatus: evaluation?.status || "pending",
-          totalScore: evaluation ? evaluation.totalScore : null,
+          evaluationStatus: current.status,
+          totalScore: current.totalScore,
+          roundScores,
+          outcome: teamRoundOutcome(program, team),
         };
       }),
     });
@@ -696,11 +906,8 @@ router.get("/hackathons/:hackathonId/teams/:teamId", async (req, res) => {
   try {
     const program = await loadProgramAndMembership(req, res);
     if (!program) return;
-    const team = await loadTeam(program, req.params.teamId);
-    if (!team)
-      return res
-        .status(404)
-        .json({ error: "Team not found in this Hackathon." });
+    const team = await loadAssignedTeam(req, res, program);
+    if (!team) return;
     const statement = team.problem_statement_id
       ? await ProblemStatement.findOne({
           hackathonId: program._id,
@@ -724,11 +931,8 @@ router.get(
     try {
       const program = await loadProgramAndMembership(req, res);
       if (!program) return;
-      const team = await loadTeam(program, req.params.teamId);
-      if (!team)
-        return res
-          .status(404)
-          .json({ error: "Team not found in this Hackathon." });
+      const team = await loadAssignedTeam(req, res, program);
+      if (!team) return;
       const stored = await loadGridFsFile(team);
       if (!stored)
         return res.status(404).json({ error: "Submission file not found." });
@@ -748,11 +952,8 @@ router.post(
     try {
       const program = await loadProgramAndMembership(req, res);
       if (!program) return;
-      const team = await loadTeam(program, req.params.teamId);
-      if (!team)
-        return res
-          .status(404)
-          .json({ error: "Team not found in this Hackathon." });
+      const team = await loadAssignedTeam(req, res, program);
+      if (!team) return;
       const stored = await loadGridFsFile(team);
       if (!stored)
         return res.status(404).json({ error: "Submission file not found." });
@@ -780,11 +981,8 @@ router.post(
 async function loadEvaluationContext(req, res) {
   const program = await loadProgramAndMembership(req, res);
   if (!program) return null;
-  const team = await loadTeam(program, req.params.teamId);
-  if (!team) {
-    res.status(404).json({ error: "Team not found in this Hackathon." });
-    return null;
-  }
+  const team = await loadAssignedTeam(req, res, program);
+  if (!team) return null;
   const criteria = program.rubric
     .filter((criterion) => criterion.active)
     .sort((a, b) => a.order - b.order);
@@ -797,7 +995,24 @@ async function loadEvaluationContext(req, res) {
       .json({ error: "Hackathon rubric is not configured to 100 marks." });
     return null;
   }
-  return { program, team, criteria };
+  const latestRound = teamRound(team);
+  const round = parseRound(req.query.round ?? req.body?.round, latestRound);
+  if (round > latestRound) {
+    res
+      .status(409)
+      .json({ error: `This team has not been selected for Round ${round}.` });
+    return null;
+  }
+  return { program, team, criteria, round, latestRound };
+}
+
+function evaluationKey(context, juryUserId) {
+  return {
+    hackathonId: context.program._id,
+    teamId: context.team._id,
+    juryMemberId: juryUserId,
+    round: context.round,
+  };
 }
 
 function validateScores(value, criteria, requireComplete) {
@@ -839,14 +1054,14 @@ router.get(
     try {
       const context = await loadEvaluationContext(req, res);
       if (!context) return;
-      const evaluation = await HackathonJuryEvaluation.findOne({
-        hackathonId: context.program._id,
-        teamId: context.team._id,
-        juryMemberId: req.juryUser.id,
-      }).lean();
+      const evaluation = await HackathonJuryEvaluation.findOne(
+        evaluationKey(context, req.juryUser.id),
+      ).lean();
       return res.json({
         evaluation: evaluation || null,
         rubric: context.criteria,
+        round: context.round,
+        latestRound: context.latestRound,
       });
     } catch (error) {
       console.error("[jury/evaluation get]", error);
@@ -885,9 +1100,7 @@ router.put(
       if (scores.error) return res.status(400).json({ error: scores.error });
       const evaluation = await HackathonJuryEvaluation.findOneAndUpdate(
         {
-          hackathonId: context.program._id,
-          teamId: context.team._id,
-          juryMemberId: req.juryUser.id,
+          ...evaluationKey(context, req.juryUser.id),
           status: { $ne: "submitted" },
         },
         {
@@ -946,11 +1159,7 @@ router.post(
         );
         if (scores.error) return res.status(400).json({ error: scores.error });
         const evaluation = await HackathonJuryEvaluation.findOneAndUpdate(
-          {
-            hackathonId: context.program._id,
-            teamId: context.team._id,
-            juryMemberId: req.juryUser.id,
-          },
+          evaluationKey(context, req.juryUser.id),
           {
             $set: {
               rubricVersion: context.program.rubricVersion,
@@ -970,11 +1179,9 @@ router.post(
         );
         return res.json({ evaluation });
       }
-      const evaluation = await HackathonJuryEvaluation.findOne({
-        hackathonId: context.program._id,
-        teamId: context.team._id,
-        juryMemberId: req.juryUser.id,
-      });
+      const evaluation = await HackathonJuryEvaluation.findOne(
+        evaluationKey(context, req.juryUser.id),
+      );
       if (!evaluation)
         return res
           .status(409)

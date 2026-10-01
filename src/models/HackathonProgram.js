@@ -12,6 +12,18 @@ const evaluationCriterionSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const roundResultSchema = new mongoose.Schema(
+  {
+    round: { type: Number, required: true, min: 1 },
+    cutoff: { type: Number, required: true, min: 0, max: 100 },
+    qualifiedCount: { type: Number, default: 0, min: 0 },
+    disqualifiedCount: { type: Number, default: 0, min: 0 },
+    decidedAt: { type: Date, default: null },
+    publishedAt: { type: Date, default: null },
+  },
+  { _id: false },
+);
+
 const hackathonProgramSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
@@ -44,6 +56,10 @@ const hackathonProgramSchema = new mongoose.Schema(
     endDate: { type: Date, default: null },
     rubricVersion: { type: Number, default: 1, min: 1 },
     rubric: { type: [evaluationCriterionSchema], default: [] },
+    /** Cutoff decision per round; teams at or above the cutoff move to the next round. */
+    roundResults: { type: [roundResultSchema], default: [] },
+    /** Most problem statements a single Jury member may claim. */
+    juryClaimLimit: { type: Number, default: 20, min: 1, max: 500 },
   },
   { timestamps: true },
 );

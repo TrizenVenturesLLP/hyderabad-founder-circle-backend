@@ -1,5 +1,8 @@
 import mongoose from "mongoose";
 
+/** Max team-proposed statements an admin can approve per Hackathon. */
+export const TEAM_PROPOSAL_LIMIT = 5;
+
 const problemStatementSchema = new mongoose.Schema(
   {
     hackathonId: {
@@ -26,6 +29,21 @@ const problemStatementSchema = new mongoose.Schema(
     },
     reviewedAt: { type: Date, default: null },
     rejectionReason: { type: String, trim: true, default: "", maxlength: 500 },
+    // The one Jury member who scores every team that picks this statement.
+    claimedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "JuryUser",
+      default: null,
+      index: true,
+    },
+    claimedAt: { type: Date, default: null },
+    // Set when a team proposed its own statement; only that team can work on it.
+    proposedByTeam: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Hackathon",
+      default: null,
+      index: true,
+    },
     id: {
       type: String,
       required: true,

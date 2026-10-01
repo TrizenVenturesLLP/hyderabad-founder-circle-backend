@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import { Hackathon } from "../models/Hackathon.js";
 import multer from "multer";
 import { HackathonSettings } from "../models/HackathonSettings.js";
-import { ProblemStatement } from "../models/ProblemStatement.js";
+import { ProblemStatement, TEAM_PROPOSAL_LIMIT } from "../models/ProblemStatement.js";
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import {
@@ -15,7 +15,11 @@ import { HackathonProgram } from "../models/HackathonProgram.js";
 import { HackathonParticipantAccount } from "../models/HackathonParticipantAccount.js";
 import { HackathonJuryEvaluation } from "../models/HackathonJuryEvaluation.js";
 import { findAccountBySetupToken } from "../services/hackathonParticipantAuth.js";
+import { teamRoundOutcome } from "../services/hackathonLeaderboard.js";
 import { isPlatformAdmin, requireAdmin } from "../middleware/auth.js";
+
+/** Includes the Team Lead. */
+const MAX_TEAM_MEMBERS = 6;
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -93,6 +97,33 @@ async function findParticipantTeam(email, phone) {
   });
 }
 
+async function teamProposalState(team) {
+  const [proposal, approved] = await Promise.all([
+    ProblemStatement.findOne({ hackathonId: team.hackathonId, proposedByTeam: team._id })
+      .sort({ createdAt: -1 })
+      .select("id title domainId status rejectionReason createdAt")
+      .lean(),
+    ProblemStatement.countDocuments({
+      hackathonId: team.hackathonId,
+      proposedByTeam: { $ne: null },
+      status: "active",
+    }),
+  ]);
+  return {
+    problemProposal: proposal
+      ? {
+          id: proposal.id,
+          title: proposal.title,
+          domainId: proposal.domainId,
+          status: proposal.status,
+          rejectionReason: proposal.rejectionReason || "",
+          createdAt: proposal.createdAt,
+        }
+      : null,
+    proposalSlots: { limit: TEAM_PROPOSAL_LIMIT, approved },
+  };
+}
+
 hackathonRouter.post("/register", async (req, res) => {
   try {
     const { team_name, lead_name, email, phone, members } = req.body;
@@ -106,7 +137,7 @@ hackathonRouter.post("/register", async (req, res) => {
       !phone?.trim() ||
       !Array.isArray(members) ||
       members.length < 1 ||
-      members.length > 4
+      members.length > MAX_TEAM_MEMBERS
     ) {
       return res.status(400).json({
         message: "Please provide valid team and member details.",
@@ -364,7 +395,15 @@ hackathonRouter.post("/user", async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    return res.status(200).json({ message: "User found", user });
+    const program = user.hackathonId
+      ? await HackathonProgram.findById(user.hackathonId).select("roundResults").lean()
+      : null;
+    return res.status(200).json({
+      message: "User found",
+      user,
+      roundResult: teamRoundOutcome(program, user, { publishedOnly: true }),
+      ...(await teamProposalState(user)),
+    });
   } catch (error) {
     return res.status(500).json({ message: "Internal server error" });
   }
@@ -402,8 +441,10 @@ hackathonRouter.post("/team/members", async (req, res) => {
       return res.status(409).json({ message: "This email is already on the team." });
     }
 
-    if (team.members.length >= 4) {
-      return res.status(409).json({ message: "Teams can have up to four members." });
+    if (team.members.length >= MAX_TEAM_MEMBERS) {
+      return res
+        .status(409)
+        .json({ message: `Teams can have up to ${MAX_TEAM_MEMBERS} members, including the Team Lead.` });
     }
 
     const member = {
@@ -517,13 +558,20 @@ hackathonRouter.post("/confirm-problem", async (req, res) => {
       });
     }
 
-    const statementExists = await ProblemStatement.exists({
+    const statement = await ProblemStatement.findOne({
       hackathonId: program._id,
       id: statementId,
       $or: [{ status: "active" }, { status: { $exists: false } }],
-    });
-    if (!statementExists) {
+    })
+      .select("proposedByTeam")
+      .lean();
+    if (!statement) {
       return res.status(404).json({ message: "Problem statement not found for this Hackathon." });
+    }
+    if (statement.proposedByTeam) {
+      return res.status(403).json({
+        message: "This problem statement was proposed by another team and is reserved for them.",
+      });
     }
 
     const user = await Hackathon.findOneAndUpdate(
@@ -540,6 +588,11 @@ hackathonRouter.post("/confirm-problem", async (req, res) => {
         message: "Your team has already confirmed a problem statement. A team can confirm only one.",
       });
     }
+    await ProblemStatement.deleteMany({
+      hackathonId: program._id,
+      proposedByTeam: team._id,
+      status: "pending_approval",
+    });
 
     return res.status(200).json({
       message: "Problem statement confirmed successfully",
@@ -548,6 +601,82 @@ hackathonRouter.post("/confirm-problem", async (req, res) => {
   } catch (error) {
     console.error("Confirmation error:", error);
     return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+hackathonRouter.post("/problem-proposals", async (req, res) => {
+  try {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const phone = String(req.body?.phone || "").trim();
+    const title = String(req.body?.title || "").trim();
+    const description = String(req.body?.description || "").trim();
+    const industry = String(req.body?.industry || "").trim();
+    const platform = String(req.body?.platform || "").trim();
+    const domainIds = parseDomainIds({ domainId: req.body?.domainId });
+
+    if (!domainIds || !title || !description) {
+      return res.status(400).json({ message: "Choose a track and enter a title and description." });
+    }
+    if (
+      title.length > 200 ||
+      description.length > 5000 ||
+      industry.length > 120 ||
+      platform.length > 200
+    ) {
+      return res.status(400).json({ message: "One of the fields is too long." });
+    }
+
+    const team = await findParticipantTeam(email, phone);
+    if (!team) {
+      return res.status(404).json({ message: "Team not found. Please sign in again." });
+    }
+    if (team.email !== email) {
+      return res.status(403).json({
+        message: `Only your Team Lead (${team.lead_name}) can propose a problem statement.`,
+      });
+    }
+    if (team.problem_statement_id) {
+      return res.status(409).json({
+        message: `Your team has already confirmed ${team.problem_statement_id}.`,
+      });
+    }
+
+    const { problemProposal, proposalSlots } = await teamProposalState(team);
+    if (problemProposal?.status === "pending_approval") {
+      return res.status(409).json({
+        message: "Your team already has a proposal waiting for admin approval.",
+      });
+    }
+    if (proposalSlots.approved >= proposalSlots.limit) {
+      return res.status(409).json({
+        message: `All ${proposalSlots.limit} slots for team-proposed statements are taken. Please choose from the listed statements.`,
+      });
+    }
+
+    await ProblemStatement.create({
+      hackathonId: team.hackathonId,
+      proposedByTeam: team._id,
+      status: "pending_approval",
+      id: `TP-${crypto.randomBytes(5).toString("hex").toUpperCase()}`,
+      domainId: domainIds[0],
+      domainIds,
+      title,
+      category: "Team proposal",
+      industry,
+      platform,
+      description,
+    });
+
+    return res.status(201).json({
+      message: "Proposal sent for admin approval.",
+      ...(await teamProposalState(team)),
+    });
+  } catch (error) {
+    if (error?.code === 11000) {
+      return res.status(409).json({ message: "Could not allocate a proposal ID; please retry." });
+    }
+    console.error("Problem proposal error:", error);
+    return res.status(500).json({ message: "Could not send your proposal." });
   }
 });
 
@@ -859,6 +988,7 @@ hackathonRouter.delete("/users/:id", requireAdmin, requireCurrentHackathonAdmin,
 
     const cleanup = [
       HackathonJuryEvaluation.deleteMany({ hackathonId: team.hackathonId, teamId: team._id }),
+      ProblemStatement.deleteMany({ hackathonId: team.hackathonId, proposedByTeam: team._id }),
       HackathonParticipantAccount.deleteMany({
         hackathonId: team.hackathonId,
         normalizedEmail: {
@@ -997,10 +1127,18 @@ hackathonRouter.get("/problem-statements", async (req, res) => {
     const statements = await ProblemStatement.find({
       hackathonId: program._id,
       $or: [{ status: "active" }, { status: { $exists: false } }],
-    }).sort({ createdAt: -1 });
+    })
+      .select("-createdBy -reviewedBy -claimedBy -claimedAt -rejectionReason")
+      .sort({ createdAt: -1 })
+      .lean();
 
     return res.status(200).json({
-      statements,
+      // Team proposals are reserved for the team that proposed them.
+      statements: statements.map(({ proposedByTeam, ...statement }) => ({
+        ...statement,
+        teamProposal: Boolean(proposedByTeam),
+        available: !proposedByTeam,
+      })),
     });
   } catch (error) {
     console.error("Get problem statements error:", error);

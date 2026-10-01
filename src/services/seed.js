@@ -33,21 +33,6 @@ const nanoSpaceVenue = {
   format: "Offline",
 };
 
-const bandExplorersVenue = {
-  time: "6:00 PM – 9:00 PM",
-  venue: "NanoSpace Coworking",
-  space: "Vijaya Krishna Towers",
-  area: "Nanakramguda",
-  address:
-    "Vijaya Krishna Towers, Nanakramguda, Hyderabad, Telangana",
-  mapsUrl: "https://share.google/sRNjvPbJCCaQRIYrB",
-  mapsEmbedUrl:
-    "https://www.google.com/maps?q=Vijaya+Krishna+Towers+Nanakramguda+Hyderabad&output=embed",
-  city: "Hyderabad",
-  seats: 80,
-  format: "Offline",
-};
-
 const DEFAULT_PAYMENT = {
   enabled: true,
   amountInr: 99,
@@ -59,39 +44,6 @@ const DEFAULT_PAYMENT = {
       label: "Razorpay",
       razorpayKeyId: "",
       instructions: "",
-    },
-  ],
-};
-
-const BAND_EXPLORERS_PAYMENT = {
-  enabled: true,
-  amountInr: 399,
-  currency: "INR",
-  tickets: [
-    {
-      id: "solo",
-      label: "1 member",
-      amountInr: 399,
-      memberCount: 1,
-    },
-    {
-      id: "duo",
-      label: "2 members",
-      amountInr: 699,
-      memberCount: 2,
-    },
-  ],
-  methods: [
-    {
-      type: "upi_qr",
-      enabled: true,
-      label: "Scan QR to pay",
-      upiId: "",
-      paymentNumber: "",
-      qrImageUrl:
-        "minio:event-qr/band-explorers-vybe/payment-qr.png",
-      instructions:
-        "Choose 1 member (₹399) or 2 members (₹699), scan the QR, pay the selected amount, then upload the payment screenshot.",
     },
   ],
 };
@@ -173,40 +125,6 @@ const SEED_EVENTS = [
         website: "https://nanospace.in/",
       },
     ],
-  },
-];
-
-const NANOSPACE_SEED_EVENTS = [
-  {
-    slug: "band-explorers-vybe",
-    title: "Band Explorers Vybe — The Corporate Music Break",
-    dateISO: "2026-09-19",
-    dateLabel: "Saturday, 19 September 2026",
-    dateConfirmed: true,
-    ...bandExplorersVenue,
-    status: "open",
-    blurb:
-      "Live music · Unwind · Connect. Tickets: ₹399 for 1 member or ₹699 for 2 members. Timings 6:00 PM – 9:00 PM at NanoSpace. No snacks. Marketing partner: Trizen Community.",
-    sortOrder: 1,
-    published: true,
-    payment: BAND_EXPLORERS_PAYMENT,
-    hosts: [
-      {
-        name: "Fun Fusion @Work",
-        role: "Event partner",
-        startup: "Corporate music & community experiences",
-        linkedin: "",
-        photo: "",
-      },
-      {
-        name: "NanoSpace Coworking",
-        role: "Host venue",
-        startup: "Nanakramguda, Hyderabad",
-        linkedin: "https://www.linkedin.com/company/nanospace-coworking/",
-        photo: "",
-      },
-    ],
-    speakers: [],
   },
 ];
 
@@ -370,37 +288,6 @@ export async function seedAdminAndEvents() {
         },
       );
       console.log(`[seed] Updated September meetup: ${event.slug}`);
-    }
-  }
-
-  for (const event of NANOSPACE_SEED_EVENTS) {
-    const exists = await Event.findOne({ slug: event.slug });
-    const withOwner = {
-      ...event,
-      organizationId: nanoSpaceOrg._id,
-      createdBy: platformAdmin._id,
-      payment: event.payment || BAND_EXPLORERS_PAYMENT,
-    };
-
-    if (!exists) {
-      await Event.create(withOwner);
-      console.log(`[seed] Event created: ${event.slug}`);
-    } else {
-      const { slug, sortOrder, published, ...fields } = event;
-      await Event.updateOne(
-        { slug: event.slug },
-        {
-          $set: {
-            ...fields,
-            organizationId: nanoSpaceOrg._id,
-            createdBy: platformAdmin._id,
-            payment: event.payment,
-            published: event.published !== false,
-            sortOrder: event.sortOrder ?? exists.sortOrder ?? 0,
-          },
-        },
-      );
-      console.log(`[seed] Updated NanoSpace event: ${event.slug}`);
     }
   }
 

@@ -20,6 +20,7 @@ import {
 } from "./routes/analytics.js";
 import { seedAdminAndEvents } from "./services/seed.js";
 import { ensureRsvpIndexes } from "./services/ensureRsvpIndexes.js";
+import { ensureEvaluationRounds } from "./services/ensureEvaluationRounds.js";
 import { Event } from "./models/Event.js";
 import hackathonRouter from "./routes/hackathon.js";
 import juryRouter from "./routes/jury.js";
@@ -219,6 +220,14 @@ async function connectMongoWithRetry() {
         console.error(
           "[rsvp-indexes] Failed:",
           indexErr instanceof Error ? indexErr.message : indexErr,
+        );
+      }
+      try {
+        await ensureEvaluationRounds();
+      } catch (roundErr) {
+        console.error(
+          "[evaluation-rounds] Failed:",
+          roundErr instanceof Error ? roundErr.message : roundErr,
         );
       }
       /*try {

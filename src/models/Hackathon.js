@@ -83,6 +83,8 @@ const hackathonSchema = new mongoose.Schema(
       enum: ["active", "suspended"],
       default: "active",
     },
+    /** Latest evaluation round the team has been selected for. */
+    round: { type: Number, default: 1, min: 1 },
   },
   { timestamps: true },
 );
