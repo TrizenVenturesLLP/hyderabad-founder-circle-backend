@@ -628,6 +628,7 @@ router.post("/hackathons/:hackathonId/problem-statements", async (req, res) => {
       status: "pending_approval",
       id,
       domainId,
+      domainIds: [domainId],
       title: String(title).trim(),
       category:
         String(category || "General")
@@ -706,7 +707,7 @@ router.get("/hackathons/:hackathonId/teams/:teamId", async (req, res) => {
           id: team.problem_statement_id,
         })
           .select(
-            "id domainId title category difficulty industry scope platform description deliverables",
+            "id domainId domainIds title category difficulty industry scope platform description deliverables",
           )
           .lean()
       : null;

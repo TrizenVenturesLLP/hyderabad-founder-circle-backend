@@ -38,6 +38,11 @@ const problemStatementSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    // All tracks this statement appears under; domainId is always domainIds[0].
+    domainIds: {
+      type: [String],
+      default: [],
+    },
     title: {
       type: String,
       required: true,

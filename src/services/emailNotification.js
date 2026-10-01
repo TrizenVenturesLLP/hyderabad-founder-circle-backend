@@ -6,7 +6,10 @@ import {
   buildAdminCustomEmail,
   buildHackathonTeamInvitationEmail,
   buildHackathonJuryInvitationEmail,
+  buildHackathonRegistrationConfirmationEmail,
+  buildHackathonPasswordSetupEmail,
 } from "../lib/emailTemplates.js";
+import { issuePasswordSetupLink } from "./hackathonParticipantAuth.js";
 import { generateInvoicePdf } from "../lib/invoicePdf.js";
 
 const EMAIL_SERVICE_URL =
@@ -499,51 +502,25 @@ export async function sendHackathonTeamInvitations({ team, members = [] }) {
     seenEmails.add(email);
     return true;
   });
-  const loginUrl = `${WEB_APP_URL.replace(/\/$/, "")}/hackathon/login`;
 
   const results = await Promise.all(
     invitees.map(async (member) => {
       const email = String(member.email).trim().toLowerCase();
       const name = String(member.full_name || "").trim();
-      const invitationUrl = `${loginUrl}?email=${encodeURIComponent(email)}`;
-      const rendered = buildHackathonTeamInvitationEmail({
-        name,
-        teamName: team.team_name,
-        teamLead: team.lead_name,
-        teamLeadEmail: team.email,
-        memberEmail: email,
-        memberPhone: String(member.phone || "").trim(),
-        registrationUrl: invitationUrl,
-      });
-      const message = {
-        to: email,
-        name,
-        subject: rendered.subject,
-        html: rendered.html,
-        text: rendered.text,
-        supportEmail: "community@trizenventures.com",
-      };
 
       try {
-        if (!EMAIL_SERVICE_AUTH_TOKEN) {
-          throw new Error(
-            "EMAIL_SERVICE_AUTH_TOKEN is not configured in the backend environment.",
-          );
-        }
-
-        const sentByService = await postToEmailService(
-          "/api/v1/email/send",
-          message,
-          20000,
-        );
-        if (sentByService === true) return true;
-        if (sentByService === false) return false;
-
-        await sendDirectMail({
-          ...message,
-          senderName: "Hyderabad Founders Network",
+        const rendered = buildHackathonTeamInvitationEmail({
+          name,
+          teamName: team.team_name,
+          teamLead: team.lead_name,
+          teamLeadEmail: team.email,
+          memberEmail: email,
+          hackathonUrl: `${WEB_APP_URL.replace(/\/$/, "")}/hackathon`,
         });
-        return true;
+        return await deliverHackathonEmail(
+          { to: email, name, ...rendered },
+          "hackathon-invitation",
+        );
       } catch (error) {
         console.error(
           "[hackathon-invitation] Email delivery failed:",
@@ -559,6 +536,90 @@ export async function sendHackathonTeamInvitations({ team, members = [] }) {
     sent: results.filter(Boolean).length,
     failed: results.filter((sent) => !sent).length,
   };
+}
+
+async function deliverHackathonEmail({ to, name, subject, html, text }, logTag) {
+  const message = {
+    to,
+    name,
+    subject,
+    html,
+    text,
+    supportEmail: "community@trizenventures.com",
+  };
+
+  try {
+    if (!EMAIL_SERVICE_AUTH_TOKEN) {
+      throw new Error("EMAIL_SERVICE_AUTH_TOKEN is not configured in the backend environment.");
+    }
+
+    const sentByService = await postToEmailService("/api/v1/email/send", message, 20000);
+    if (sentByService === true) return true;
+    if (sentByService === false) return false;
+
+    await sendDirectMail({ ...message, senderName: "Hyderabad Founders Network" });
+    return true;
+  } catch (error) {
+    console.error(
+      `[${logTag}] Email delivery failed:`,
+      error instanceof Error ? error.message : error,
+    );
+    return false;
+  }
+}
+
+export async function sendHackathonRegistrationConfirmation({ team }) {
+  const email = String(team?.email || "").trim().toLowerCase();
+  try {
+    const access = await issuePasswordSetupLink({ hackathonId: team.hackathonId, email });
+    const rendered = buildHackathonRegistrationConfirmationEmail({
+      name: team.lead_name,
+      teamName: team.team_name,
+      leadEmail: email,
+      members: team.members || [],
+      actionUrl: access.url,
+      hasPassword: access.hasPassword,
+      expiresAt: access.expiresAt,
+    });
+    return await deliverHackathonEmail(
+      { to: email, name: team.lead_name, ...rendered },
+      "hackathon-registration",
+    );
+  } catch (error) {
+    console.error(
+      "[hackathon-registration] Email delivery failed:",
+      error instanceof Error ? error.message : error,
+    );
+    return false;
+  }
+}
+
+export async function sendHackathonPasswordSetupEmail({ hackathonId, email, name, teamName }) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  try {
+    const access = await issuePasswordSetupLink({
+      hackathonId,
+      email: normalizedEmail,
+      force: true,
+    });
+    const rendered = buildHackathonPasswordSetupEmail({
+      name,
+      teamName,
+      email: normalizedEmail,
+      setupUrl: access.url,
+      expiresAt: access.expiresAt,
+    });
+    return await deliverHackathonEmail(
+      { to: normalizedEmail, name, ...rendered },
+      "hackathon-password-setup",
+    );
+  } catch (error) {
+    console.error(
+      "[hackathon-password-setup] Email delivery failed:",
+      error instanceof Error ? error.message : error,
+    );
+    return false;
+  }
 }
 
 export async function sendHackathonJuryInvitation({ email, name, hackathonName, invitationUrl, expiresAt }) {

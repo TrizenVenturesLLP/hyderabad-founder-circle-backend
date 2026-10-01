@@ -5,8 +5,15 @@ import multer from "multer";
 import { HackathonSettings } from "../models/HackathonSettings.js";
 import { ProblemStatement } from "../models/ProblemStatement.js";
 import mongoose from "mongoose";
-import { sendHackathonTeamInvitations } from "../services/emailNotification.js";
+import bcrypt from "bcryptjs";
+import {
+  sendHackathonPasswordSetupEmail,
+  sendHackathonRegistrationConfirmation,
+  sendHackathonTeamInvitations,
+} from "../services/emailNotification.js";
 import { HackathonProgram } from "../models/HackathonProgram.js";
+import { HackathonParticipantAccount } from "../models/HackathonParticipantAccount.js";
+import { findAccountBySetupToken } from "../services/hackathonParticipantAuth.js";
 import { isPlatformAdmin, requireAdmin } from "../middleware/auth.js";
 
 const upload = multer({
@@ -48,6 +55,17 @@ async function requireCurrentHackathonAdmin(req, res, next) {
     console.error("[hackathon admin authorization]", error);
     return res.status(500).json({ message: "Could not verify Hackathon access." });
   }
+}
+
+const ALLOWED_DOMAIN_IDS = ["ui-ux", "web-dev", "vibe-coding", "agentic-ai"];
+
+function parseDomainIds(source) {
+  const raw =
+    Array.isArray(source?.domainIds) && source.domainIds.length
+      ? source.domainIds
+      : [source?.domainId];
+  const ids = [...new Set(raw.map((value) => String(value || "").trim()).filter(Boolean))];
+  return ids.length && ids.every((id) => ALLOWED_DOMAIN_IDS.includes(id)) ? ids : null;
 }
 
 function normalizePhone(phone) {
@@ -114,10 +132,13 @@ hackathonRouter.post("/register", async (req, res) => {
       members,
     });
 
-    const invitations = await sendHackathonTeamInvitations({
-      team,
-      members: team.members,
-    });
+    const [confirmationSent, invitations] = await Promise.all([
+      sendHackathonRegistrationConfirmation({ team }),
+      sendHackathonTeamInvitations({ team, members: team.members }),
+    ]);
+    const confirmationMessage = confirmationSent
+      ? ` We've sent a confirmation email to ${team.email} with a link to set your password.`
+      : " We couldn't send the confirmation email right now. Use \"Send me a link\" on the sign-in page to get your set-password link.";
     const invitationMessage = invitations.attempted
       ? invitations.failed
         ? ` Invitations sent to ${invitations.sent} of ${invitations.attempted} team members.`
@@ -125,7 +146,8 @@ hackathonRouter.post("/register", async (req, res) => {
       : "";
 
     return res.status(201).json({
-      message: `Team registration is successful.${invitationMessage}`,
+      message: `Team registration is successful.${confirmationMessage}${invitationMessage}`,
+      confirmationSent,
       invitations,
       team,
     });
@@ -138,38 +160,67 @@ hackathonRouter.post("/register", async (req, res) => {
   }
 });
 
+async function findTeamByParticipantEmail(hackathonId, email) {
+  const teams = await Hackathon.find({
+    hackathonId,
+    $or: [{ email }, { "members.email": email }],
+  });
+  return teams.find((team) => team.email === email) || teams[0] || null;
+}
+
+function findLeadTeam(hackathonId, email) {
+  return Hackathon.findOne({ hackathonId, email });
+}
+
+function participantProfile(team, email) {
+  if (team.email === email) {
+    return { name: team.lead_name, email, phone: team.phone, role: "lead" };
+  }
+  const member = team.members.find((entry) => entry.email === email);
+  return { name: member?.full_name || "Participant", email, phone: member?.phone || "", role: "member" };
+}
+
 hackathonRouter.post("/login", async (req, res) => {
   try {
     const email = String(req.body?.email || "").trim().toLowerCase();
-    const phone = String(req.body?.phone || "").trim();
+    const password = String(req.body?.password || "");
 
-    if (!email || !phone) {
-      return res.status(400).json({ message: "Email and mobile number are required." });
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email and password are required." });
     }
 
-    const team = await findParticipantTeam(email, phone);
-
+    const program = await HackathonProgram.findOne({ slug: CURRENT_HACKATHON_SLUG }).select("_id");
+    const team = program ? await findTeamByParticipantEmail(program._id, email) : null;
     if (!team) {
-      return res.status(401).json({
-        message: "Invalid email or mobile number",
+      return res.status(401).json({ message: "Invalid email or password." });
+    }
+    if (team.email !== email) {
+      return res.status(403).json({
+        code: "LEAD_ONLY",
+        message: `Only the Team Lead can sign in. Ask ${team.lead_name} to sign in to your team dashboard.`,
       });
     }
 
-    const isTeamLead =
-      team.email === email && normalizePhone(team.phone) === normalizePhone(phone);
-    const member = team.members.find(
-      (entry) => entry.email === email && normalizePhone(entry.phone) === normalizePhone(phone),
-    );
+    const account = await HackathonParticipantAccount.findOne({
+      hackathonId: program._id,
+      normalizedEmail: email,
+    }).select("passwordHash");
+    if (!account?.passwordHash) {
+      return res.status(403).json({
+        code: "PASSWORD_NOT_SET",
+        message:
+          "You haven't set a password yet. Open the set-password link in your registration confirmation email, or request a new link below.",
+      });
+    }
+
+    if (!(await bcrypt.compare(password, account.passwordHash))) {
+      return res.status(401).json({ message: "Invalid email or password." });
+    }
 
     return res.status(200).json({
       message: "Login is successful",
       team,
-      profile: {
-        name: isTeamLead ? team.lead_name : member.full_name,
-        email,
-        phone,
-        role: isTeamLead ? "lead" : "member",
-      },
+      profile: participantProfile(team, email),
     });
   } catch (error) {
     console.error("Hackathon login error:", error);
@@ -177,6 +228,121 @@ hackathonRouter.post("/login", async (req, res) => {
     return res.status(500).json({
       message: "Internal server error",
     });
+  }
+});
+
+hackathonRouter.post("/password/validate", async (req, res) => {
+  try {
+    const account = await findAccountBySetupToken(req.body?.token);
+    if (!account) {
+      return res.status(410).json({
+        message: "This link is invalid or has expired. Request a new link to set your password.",
+      });
+    }
+
+    const team = await findLeadTeam(account.hackathonId, account.normalizedEmail);
+    if (!team) {
+      return res.status(403).json({
+        message: "Only the Team Lead can set a password for the team dashboard.",
+      });
+    }
+    return res.status(200).json({
+      email: account.normalizedEmail,
+      name: team.lead_name,
+      teamName: team.team_name,
+      hasPassword: Boolean(account.passwordHash),
+    });
+  } catch (error) {
+    console.error("Hackathon password link validation error:", error);
+    return res.status(500).json({ message: "Could not verify this link." });
+  }
+});
+
+hackathonRouter.post("/password/set", async (req, res) => {
+  try {
+    const password = String(req.body?.password || "");
+    if (password.length < 8 || password.length > 128) {
+      return res.status(400).json({ message: "Password must be 8 to 128 characters." });
+    }
+
+    const account = await findAccountBySetupToken(req.body?.token);
+    if (!account) {
+      return res.status(410).json({
+        message: "This link is invalid or has expired. Request a new link to set your password.",
+      });
+    }
+    if (!(await findLeadTeam(account.hackathonId, account.normalizedEmail))) {
+      return res.status(403).json({
+        message: "Only the Team Lead can set a password for the team dashboard.",
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const updated = await HackathonParticipantAccount.findOneAndUpdate(
+      {
+        _id: account._id,
+        setupTokenHash: account.setupTokenHash,
+        setupTokenExpiresAt: { $gt: new Date() },
+      },
+      {
+        $set: {
+          passwordHash,
+          passwordSetAt: new Date(),
+          setupTokenHash: null,
+          setupTokenExpiresAt: null,
+        },
+      },
+      { new: true },
+    );
+    if (!updated) {
+      return res.status(410).json({
+        message: "This link has already been used. Request a new link to set your password.",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Your password is set. Sign in to continue.",
+      email: updated.normalizedEmail,
+    });
+  } catch (error) {
+    console.error("Hackathon set password error:", error);
+    return res.status(500).json({ message: "Could not set your password." });
+  }
+});
+
+hackathonRouter.post("/password/request-link", async (req, res) => {
+  const genericMessage =
+    "If this email belongs to a registered Team Lead, we've sent a link to set your password. Check your inbox and spam folder.";
+  try {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      return res.status(400).json({ message: "Please enter a valid email address." });
+    }
+
+    const program = await HackathonProgram.findOne({ slug: CURRENT_HACKATHON_SLUG }).select("_id");
+    const team = program ? await findLeadTeam(program._id, email) : null;
+    if (!team) return res.status(200).json({ message: genericMessage });
+
+    const existing = await HackathonParticipantAccount.findOne({
+      hackathonId: program._id,
+      normalizedEmail: email,
+    }).select("lastLinkSentAt");
+    if (existing?.lastLinkSentAt && Date.now() - existing.lastLinkSentAt.getTime() < 60 * 1000) {
+      return res.status(429).json({
+        message: "A link was sent less than a minute ago. Please wait before requesting another.",
+      });
+    }
+
+    await sendHackathonPasswordSetupEmail({
+      hackathonId: program._id,
+      email,
+      name: team.lead_name,
+      teamName: team.team_name,
+    });
+    return res.status(200).json({ message: genericMessage });
+  } catch (error) {
+    console.error("Hackathon password link request error:", error);
+    return res.status(500).json({ message: "Could not send the link. Please try again." });
   }
 });
 
@@ -771,7 +937,6 @@ hackathonRouter.post("/problem-statements", requireAdmin, requireCurrentHackatho
   try {
     const {
       id,
-      domainId,
       title,
       category,
       difficulty,
@@ -781,10 +946,11 @@ hackathonRouter.post("/problem-statements", requireAdmin, requireCurrentHackatho
     const industry = String(req.body?.industry || "").trim();
     const scope = String(req.body?.scope || "").trim();
     const platform = String(req.body?.platform || "").trim();
+    const domainIds = parseDomainIds(req.body);
 
-    if (!id || !domainId || !title || !description) {
+    if (!id || !domainIds || !title || !description) {
       return res.status(400).json({
-        message: "id, domainId, title and description are required.",
+        message: "id, at least one valid domain track, title and description are required.",
       });
     }
     if (industry.length > 120 || platform.length > 200 || scope.length > 3000) {
@@ -798,7 +964,8 @@ hackathonRouter.post("/problem-statements", requireAdmin, requireCurrentHackatho
       {
         hackathonId: req.adminHackathon._id,
         id: id.trim().toUpperCase(),
-        domainId,
+        domainId: domainIds[0],
+        domainIds,
         title: title.trim(),
         category: category?.trim() || "General",
         difficulty: difficulty || "Intermediate",
@@ -836,8 +1003,7 @@ hackathonRouter.post("/problem-statements/bulk", requireAdmin, requireCurrentHac
       return res.status(400).json({ message: "Provide between 1 and 100 problem statements." });
     }
     if (items.some((item) => {
-      const domainId = String(item?.domainId || "").trim();
-      return !["ui-ux", "web-dev", "vibe-coding", "agentic-ai"].includes(domainId) ||
+      return !parseDomainIds(item) ||
         !["Beginner", "Intermediate", "Advanced"].includes(item?.difficulty || "Intermediate") ||
         !String(item?.title || "").trim() ||
         !String(item?.description || "").trim() ||
@@ -854,8 +1020,8 @@ hackathonRouter.post("/problem-statements/bulk", requireAdmin, requireCurrentHac
     for (const item of items) {
       const title = String(item?.title || "").trim();
       const description = String(item?.description || "").trim();
-      const domainId = String(item?.domainId || "").trim();
-      if (!title || !description || !domainId) {
+      const domainIds = parseDomainIds(item);
+      if (!title || !description || !domainIds) {
         return res.status(400).json({ message: "Every statement needs a domain, title, and description." });
       }
       const id = `ADM-${crypto.randomBytes(5).toString("hex").toUpperCase()}`;
@@ -863,7 +1029,8 @@ hackathonRouter.post("/problem-statements/bulk", requireAdmin, requireCurrentHac
         hackathonId: req.adminHackathon._id,
         createdBy: null,
         id,
-        domainId,
+        domainId: domainIds[0],
+        domainIds,
         title,
         category: String(item.category || "General").trim(),
         difficulty: item.difficulty || "Intermediate",
