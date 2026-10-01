@@ -3,6 +3,15 @@
  * Mirrors the templates in hfn_email_service.
  */
 
+import {
+  formatAbsoluteExpiry,
+  formatDateIst,
+  link,
+  muted,
+  renderHackathonEmail,
+  strong,
+} from "./hackathonEmailLayout.js";
+
 function esc(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -115,53 +124,43 @@ export function buildAdminCustomEmail({ subject, body }) {
   return { subject: String(subject || "").trim(), html: htmlBody, text };
 }
 
-function formatLinkExpiry(value) {
-  if (!value) return "";
-  const expiresAt = new Date(value);
-  const minutes = Math.max(1, Math.round((expiresAt.getTime() - Date.now()) / 60000));
-  const time = expiresAt.toLocaleTimeString("en-IN", { timeStyle: "short", timeZone: "Asia/Kolkata" });
-  return `in ${minutes} minute${minutes === 1 ? "" : "s"} (at ${time} IST)`;
+// ── Hackathon emails ─────────────────────────────────────────────────────────
+// Built on the shared layout in hackathonEmailLayout.js. Every builder returns
+// { template, subject, html, text }; `template` identifies the email in logs.
+
+function eventName(hackathon, fallbackName = "") {
+  return String(hackathon?.name || fallbackName || "").trim();
 }
 
-function hackathonEmailShell({ subject, heading, bodyHtml }) {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>${esc(subject)}</title>
-</head>
-<body style="margin:0;padding:0;background:#f2f3f8;font-family:Arial,Helvetica,sans-serif;color:#20213a;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f2f3f8;padding:32px 12px;">
-    <tr><td align="center">
-      <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:100%;max-width:600px;background:#ffffff;border:1px solid #e3e5ed;">
-        <tr><td style="padding:22px 28px;background:#24204f;color:#ffffff;">
-          <p style="margin:0;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#d8d4ff;">Trizen Ventures · Hackathon</p>
-          <h1 style="margin:12px 0 0;font-size:26px;line-height:1.2;color:#ffffff;">${esc(heading)}</h1>
-        </td></tr>
-        <tr><td style="padding:28px;">
-${bodyHtml}
-        </td></tr>
-        <tr><td style="padding:16px 28px;background:#fafafe;border-top:1px solid #ececf2;text-align:center;">
-          <p style="margin:0;font-size:12px;line-height:1.6;color:#777b94;">Hyderabad Founders Network · Supported by Trizen Ventures</p>
-          <a href="mailto:community@trizenventures.com" style="font-size:12px;line-height:1.8;color:#5146a8;text-decoration:none;">community@trizenventures.com</a>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
+function withEvent(event, action) {
+  return event ? `${event} — ${action}` : action;
 }
 
-function hackathonEmailButton(url, label) {
-  const safeUrl = esc(url || "");
-  return `<table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 auto 20px;">
-            <tr><td align="center" bgcolor="#5146a8">
-              <a href="${safeUrl}" style="display:inline-block;padding:13px 24px;border:1px solid #5146a8;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;">${esc(label)}</a>
-            </td></tr>
-          </table>
-          <p style="margin:0 0 7px;font-size:12px;line-height:1.5;color:#777b94;">Button not working? Copy this link into your browser:</p>
-          <p style="margin:0;font-size:12px;line-height:1.6;overflow-wrap:anywhere;word-break:break-all;"><a href="${safeUrl}" style="color:#5146a8;text-decoration:underline;overflow-wrap:anywhere;word-break:break-all;">${safeUrl}</a></p>`;
+function eventReference(event) {
+  return event ? strong(event) : "your hackathon";
+}
+
+function footerEvent(event) {
+  return event || "a hackathon on Trizen Community";
+}
+
+function venueLabel(hackathon) {
+  const venue = String(hackathon?.venueName || "").trim();
+  const city = String(hackathon?.city || "").trim();
+  if (!venue) return city;
+  return city && !venue.toLowerCase().includes(city.toLowerCase()) ? `${venue}, ${city}` : venue;
+}
+
+function eventRows(hackathon, event) {
+  return [
+    { label: "Hackathon", value: event },
+    { label: "Dates", value: hackathon?.dateLabel },
+    { label: "Venue", value: venueLabel(hackathon) },
+  ];
+}
+
+function signInPage(signInUrl) {
+  return signInUrl ? link(signInUrl, "sign-in page") : "sign-in page";
 }
 
 export function buildHackathonRegistrationConfirmationEmail({
@@ -172,77 +171,145 @@ export function buildHackathonRegistrationConfirmationEmail({
   actionUrl,
   hasPassword = false,
   expiresAt,
+  hackathon = {},
+  signInUrl = "",
 }) {
-  const subject = `Registration confirmed: ${teamName || "your team"}`;
-  const expiry = formatLinkExpiry(expiresAt);
-  const memberRows = members
-    .map(
-      (member) =>
-        `<li style="margin:0 0 4px;">${esc(member.full_name)} <span style="color:#777b94;">(${esc(member.email)})</span></li>`,
-    )
-    .join("");
-  const passwordCopy = hasPassword
-    ? `You already have a password for this hackathon. Sign in with <strong style="color:#20213a;">${esc(leadEmail)}</strong> and your existing password.`
-    : `To sign in to your team dashboard, set a password for <strong style="color:#20213a;">${esc(leadEmail)}</strong> using the button below.${expiry ? ` This link expires <strong style="color:#20213a;">${esc(expiry)}</strong> and can be used once. If it expires, use "Send me a link" on the sign-in page to get a new one.` : ""}`;
-
-  const bodyHtml = `          <p style="margin:0 0 12px;font-size:16px;line-height:1.6;">Hi ${esc(name || "there")},</p>
-          <p style="margin:0 0 22px;font-size:15px;line-height:1.65;color:#51556d;">Your team <strong style="color:#20213a;">${esc(teamName || "")}</strong> is registered for the hackathon. You are the Team Lead.</p>
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 24px;background:#f7f7fb;border:1px solid #e6e7ef;">
-            <tr><td style="padding:16px 18px;">
-              <p style="margin:0 0 5px;font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#777b94;">Your team</p>
-              <p style="margin:0 0 10px;font-size:18px;font-weight:700;color:#24204f;">${esc(teamName || "")}</p>
-              ${memberRows ? `<ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.6;color:#51556d;">${memberRows}</ul>` : ""}
-            </td></tr>
-          </table>
-          <p style="margin:0 0 18px;font-size:14px;line-height:1.6;color:#51556d;">${passwordCopy}</p>
-          ${hackathonEmailButton(actionUrl, hasPassword ? "Sign in" : "Set your password")}
-          <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#51556d;">Your team members get an invitation email with their own link to set a password and sign in. Only you, as Team Lead, can confirm the problem statement and submit the project.</p>`;
-
-  const text = [
-    `Hi ${name || "there"},`,
-    "",
-    `Your team ${teamName || ""} is registered for the hackathon.`,
-    "",
-    ...members.map((member) => `- ${member.full_name} (${member.email})`),
-    "",
-    hasPassword
-      ? `Sign in with ${leadEmail} and your existing password: ${actionUrl || ""}`
-      : `Set your password for ${leadEmail}: ${actionUrl || ""}${expiry ? `\nThis link expires ${expiry}. If it expires, use "Send me a link" on the sign-in page to get a new one.` : ""}`,
-    "",
-    "Hyderabad Founders Network",
-    "community@trizenventures.com",
-  ].join("\n");
+  const event = eventName(hackathon);
+  const team = String(teamName || "").trim();
+  const email = String(leadEmail || "").trim();
+  const expiry = hasPassword ? "" : formatAbsoluteExpiry(expiresAt);
+  const memberLines = members
+    .filter((member) => member?.full_name || member?.email)
+    .map((member) => [
+      String(member.full_name || member.email),
+      member.full_name && member.email ? muted(` · ${member.email}`) : "",
+    ]);
 
   return {
-    subject,
-    html: hackathonEmailShell({ subject, heading: "Your team is registered", bodyHtml }),
-    text,
+    template: "hackathon_registration",
+    ...renderHackathonEmail({
+      subject: withEvent(event, team ? `Registration confirmed for ${team}` : "Registration confirmed"),
+      preheader: event
+        ? `Your team registration for ${event} is confirmed.`
+        : "Your team registration is confirmed.",
+      eyebrow: event,
+      heading: "Your team is registered",
+      blocks: [
+        { type: "greeting", name },
+        {
+          type: "paragraph",
+          content: ["Your team ", strong(team), " is registered for ", eventReference(event), ". You're the Team Lead."],
+        },
+        {
+          type: "card",
+          rows: [
+            ...eventRows(hackathon, event),
+            { label: "Team", value: team },
+            { label: "Your role", value: "Team Lead" },
+            { label: "Members", lines: memberLines },
+          ],
+        },
+        {
+          type: "paragraph",
+          content: hasPassword
+            ? ["You already have a password for this account. Sign in with ", strong(email), " to open your team dashboard."]
+            : ["Set a password for ", strong(email), " to sign in to your team dashboard."],
+        },
+        { type: "button", url: actionUrl, label: hasPassword ? "Sign in to your dashboard" : "Set your password" },
+        expiry && {
+          type: "note",
+          content: [
+            `This one-time link expires at ${expiry}. If it expires, use `,
+            strong("Send me a link"),
+            " on the ",
+            signInPage(signInUrl),
+            " to get a new one.",
+          ],
+        },
+        { type: "divider" },
+        {
+          type: "steps",
+          title: "Next steps",
+          items: [
+            memberLines.length > 0 && "Each team member gets an invitation email to set their own password.",
+            "Choose your problem statement on the team dashboard and confirm it. Only the Team Lead can confirm.",
+            "Submit your project from your problem statement page. Only the Team Lead can submit, and each team submits once.",
+          ].filter(Boolean),
+        },
+        { type: "fallback", url: actionUrl },
+      ],
+      footerNote: `You received this email because you registered a team for ${footerEvent(event)}.`,
+    }),
   };
 }
 
-export function buildHackathonPasswordSetupEmail({ name, teamName, email, setupUrl, expiresAt }) {
-  const subject = "Set your hackathon password";
-  const expiry = formatLinkExpiry(expiresAt);
-  const bodyHtml = `          <p style="margin:0 0 12px;font-size:16px;line-height:1.6;">Hi ${esc(name || "there")},</p>
-          <p style="margin:0 0 18px;font-size:15px;line-height:1.65;color:#51556d;">Use the button below to set a new password for <strong style="color:#20213a;">${esc(email)}</strong>${teamName ? ` (team <strong style="color:#20213a;">${esc(teamName)}</strong>)` : ""}.${expiry ? ` This link expires <strong style="color:#20213a;">${esc(expiry)}</strong> and can be used once.` : ""}</p>
-          ${hackathonEmailButton(setupUrl, "Set your password")}
-          <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#51556d;">Didn't ask for this? You can ignore this email; your current password stays the same.</p>`;
-  const text = [
-    `Hi ${name || "there"},`,
-    "",
-    `Set your hackathon password for ${email}: ${setupUrl || ""}`,
-    expiry ? `This link expires ${expiry}.` : "",
-    "",
-    "Didn't ask for this? You can ignore this email.",
-    "",
-    "Hyderabad Founders Network",
-    "community@trizenventures.com",
-  ].join("\n");
+/**
+ * `intent` is "setup" for accounts without a password and "reset" when the
+ * account already has one; the link and token behave the same either way.
+ */
+export function buildHackathonPasswordSetupEmail({
+  name,
+  teamName,
+  email,
+  setupUrl,
+  expiresAt,
+  hackathon = {},
+  intent = "setup",
+  signInUrl = "",
+}) {
+  const event = eventName(hackathon);
+  const isReset = intent === "reset";
+  const action = isReset ? "Reset your password" : "Set your password";
+  const expiry = formatAbsoluteExpiry(expiresAt);
+  const account = event || "Trizen Community";
 
   return {
-    subject,
-    html: hackathonEmailShell({ subject, heading: "Set your password", bodyHtml }),
-    text,
+    template: isReset ? "hackathon_password_reset" : "hackathon_password_setup",
+    ...renderHackathonEmail({
+      subject: event ? `${action} — ${event}` : action,
+      preheader: isReset
+        ? `Reset the password for your ${account} account.`
+        : `Set your password to access your ${account} account.`,
+      eyebrow: event,
+      heading: action,
+      blocks: [
+        { type: "greeting", name },
+        {
+          type: "paragraph",
+          content: isReset
+            ? ["We received a request to reset the password for your ", eventReference(event), " account. Use the button below to choose a new one."]
+            : ["Set a password for your ", eventReference(event), " account. You'll use it with your email address to sign in to your team dashboard."],
+        },
+        {
+          type: "card",
+          rows: [
+            { label: "Account", value: email },
+            { label: "Team", value: teamName },
+            { label: "Hackathon", value: event },
+          ],
+        },
+        { type: "button", url: setupUrl, label: isReset ? "Reset password" : "Set your password" },
+        {
+          type: "note",
+          content: [
+            expiry ? `This link works once and expires at ${expiry}. ` : "This link works once. ",
+            "Need another? Request a new link from the ",
+            signInPage(signInUrl),
+            ".",
+          ],
+        },
+        isReset
+          ? {
+              type: "callout",
+              content: [strong("Didn't request this?"), " Your current password remains unchanged. You can safely ignore this email."],
+            }
+          : { type: "note", content: "Didn't request this link? You can ignore this email." },
+        { type: "fallback", url: setupUrl },
+      ],
+      footerNote: isReset
+        ? `You received this email because a password reset was requested for your ${account} account.`
+        : `You received this email because a password link was requested for your ${account} account.`,
+    }),
   };
 }
 
@@ -255,122 +322,148 @@ export function buildHackathonTeamInvitationEmail({
   actionUrl,
   hasPassword = false,
   expiresAt,
+  hackathon = {},
+  isResend = false,
+  signInUrl = "",
 }) {
-  const safeName = esc(name || "there");
-  const safeTeamName = esc(teamName || "your hackathon team");
-  const safeTeamLead = esc(teamLead || "Your team lead");
-  const safeLeadEmail = esc(teamLeadEmail || "");
-  const safeUrl = esc(actionUrl || "");
-  const expiry = formatLinkExpiry(expiresAt);
-  const roleCopy = `${safeTeamLead} selects and confirms the problem statement and submits the project. Once it's confirmed, you can see it on your team dashboard.`;
-  const accessCopy = hasPassword
-    ? `You already have a password. Sign in with <strong style="color:#20213a;">${esc(memberEmail || "")}</strong> to open your team dashboard. ${roleCopy}`
-    : `Set a password for <strong style="color:#20213a;">${esc(memberEmail || "")}</strong> using the button below, then sign in to your team dashboard.${expiry ? ` This link expires <strong style="color:#20213a;">${esc(expiry)}</strong> and can be used once. If it expires, use "Send me a link" on the sign-in page to get a new one.` : ""} ${roleCopy}`;
-  const buttonLabel = hasPassword ? "Sign in" : "Set your password";
-  const subject = `You're invited to join ${teamName || "a team"} at the hackathon`;
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>${esc(subject)}</title>
-</head>
-<body style="margin:0;padding:0;background:#f2f3f8;font-family:Arial,Helvetica,sans-serif;color:#20213a;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f2f3f8;padding:32px 12px;">
-    <tr><td align="center">
-      <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:100%;max-width:600px;background:#ffffff;border:1px solid #e3e5ed;border-radius:12px;overflow:hidden;">
-        <tr><td style="padding:22px 28px;background:#24204f;color:#ffffff;">
-          <p style="margin:0;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#d8d4ff;">Trizen Ventures · Hackathon</p>
-          <h1 style="margin:12px 0 0;font-size:26px;line-height:1.2;color:#ffffff;">You're on the team</h1>
-        </td></tr>
-        <tr><td style="padding:28px;">
-          <p style="margin:0 0 12px;font-size:16px;line-height:1.6;">Hi ${safeName},</p>
-          <p style="margin:0 0 22px;font-size:15px;line-height:1.65;color:#51556d;">${safeTeamLead} invited you to join <strong style="color:#20213a;">${safeTeamName}</strong>. You're one of the team members for the hackathon.</p>
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 24px;background:#f7f7fb;border:1px solid #e6e7ef;border-radius:8px;">
-            <tr><td style="padding:16px 18px;">
-              <p style="margin:0 0 5px;font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#777b94;">Your team</p>
-              <p style="margin:0 0 14px;font-size:18px;font-weight:700;color:#24204f;">${safeTeamName}</p>
-              <p style="margin:0;font-size:13px;line-height:1.6;color:#51556d;">Team lead: <strong style="color:#20213a;">${safeTeamLead}</strong><br>Email: <a href="mailto:${safeLeadEmail}" style="color:#5146a8;text-decoration:underline;overflow-wrap:anywhere;">${safeLeadEmail}</a></p>
-            </td></tr>
-          </table>
-          <p style="margin:0 0 18px;font-size:13px;line-height:1.6;color:#51556d;">${accessCopy}</p>
-          <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 auto 20px;">
-            <tr><td align="center" bgcolor="#5146a8" style="border-radius:6px;">
-              <a href="${safeUrl}" style="display:inline-block;padding:13px 24px;border:1px solid #5146a8;border-radius:6px;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;">${buttonLabel}</a>
-            </td></tr>
-          </table>
-          <p style="margin:0 0 7px;font-size:12px;line-height:1.5;color:#777b94;">Button not working? Copy this link into your browser:</p>
-          <p style="margin:0;font-size:12px;line-height:1.6;overflow-wrap:anywhere;word-break:break-all;"><a href="${safeUrl}" style="color:#5146a8;text-decoration:underline;overflow-wrap:anywhere;word-break:break-all;">${safeUrl}</a></p>
-          <p style="margin:24px 0 0;font-size:14px;line-height:1.6;color:#51556d;">We look forward to building with you.</p>
-        </td></tr>
-        <tr><td style="padding:16px 28px;background:#fafafe;border-top:1px solid #ececf2;text-align:center;">
-          <p style="margin:0;font-size:12px;line-height:1.6;color:#777b94;">Hyderabad Founders Network · Supported by Trizen Ventures</p>
-          <a href="mailto:community@trizenventures.com" style="font-size:12px;line-height:1.8;color:#5146a8;text-decoration:none;">community@trizenventures.com</a>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
-  const text = [
-    `Hi ${name || "there"},`,
-    "",
-    `${teamLead || "Your team lead"} invited you to join ${teamName || "your hackathon team"}.`,
-    "",
-    `Team: ${teamName || ""}`,
-    `Team lead: ${teamLead || ""}`,
-    `Team lead email: ${teamLeadEmail || ""}`,
-    `Your email: ${memberEmail || ""}`,
-    "",
-    hasPassword
-      ? `Sign in with ${memberEmail || ""} and your existing password: ${actionUrl || ""}`
-      : `Set your password for ${memberEmail || ""}: ${actionUrl || ""}${expiry ? `\nThis link expires ${expiry}. If it expires, use "Send me a link" on the sign-in page to get a new one.` : ""}`,
-    "",
-    `${teamLead || "Your team lead"} selects and confirms the problem statement and submits the project. Once it's confirmed, you can see it on your team dashboard.`,
-    "",
-    "Hyderabad Founders Network",
-    "community@trizenventures.com",
-  ].join("\n");
+  const event = eventName(hackathon);
+  const team = String(teamName || "").trim() || "your team";
+  const lead = String(teamLead || "").trim() || "Your Team Lead";
+  const leadEmail = String(teamLeadEmail || "").trim();
+  const email = String(memberEmail || "").trim();
+  const expiry = hasPassword ? "" : formatAbsoluteExpiry(expiresAt);
 
-  return { subject, html, text };
+  return {
+    template: "hackathon_team_invitation",
+    ...renderHackathonEmail({
+      subject: `${isResend ? "Reminder: " : ""}${withEvent(event, `${lead} added you to ${team}`)}`,
+      preheader: `${lead} added you to ${team}${event ? ` for ${event}` : ""}.`,
+      eyebrow: event,
+      heading: `You've been added to ${team}`,
+      blocks: [
+        { type: "greeting", name },
+        {
+          type: "paragraph",
+          content: [
+            strong(lead),
+            " added you to ",
+            strong(team),
+            event ? [" for ", strong(event)] : "",
+            ". ",
+            hasPassword
+              ? "You already have a password, so you can sign in to your team dashboard right away."
+              : "Set a password to sign in to your team dashboard.",
+          ],
+        },
+        {
+          type: "card",
+          rows: [
+            ...eventRows(hackathon, event),
+            { label: "Team", value: team },
+            { label: "Team Lead", value: leadEmail ? [lead, muted(" · "), link(`mailto:${leadEmail}`, leadEmail)] : lead },
+            { label: "Your role", value: "Team Member" },
+            { label: "Sign-in email", value: email },
+          ],
+        },
+        { type: "button", url: actionUrl, label: hasPassword ? "Sign in" : "Set your password" },
+        expiry && {
+          type: "note",
+          content: [
+            `This one-time link expires at ${expiry}. If it expires, open the `,
+            signInPage(signInUrl),
+            ", choose ",
+            strong("Send me a link"),
+            " and enter ",
+            email ? strong(email) : "your email address",
+            ".",
+          ],
+        },
+        {
+          type: "note",
+          content: `${lead} confirms the team's problem statement and submits the project. Once the problem statement is confirmed, you'll see it on your team dashboard.`,
+        },
+        { type: "fallback", url: actionUrl },
+      ],
+      footerNote: `You received this email because ${lead} added you to a team for ${footerEvent(event)}.`,
+    }),
+  };
 }
 
 export function buildHackathonJuryInvitationEmail({
   name,
+  email = "",
   hackathonName,
   invitationUrl,
   expiresAt,
+  hackathon = {},
+  isResend = false,
+  signInUrl = "",
 }) {
-  const safeName = esc(name || "there");
-  const safeHackathonName = esc(hackathonName || "the hackathon");
-  const safeUrl = esc(invitationUrl || "");
-  const expiration = expiresAt
-    ? new Date(expiresAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" })
-    : "the stated expiry date";
-  const subject = `Jury invitation: ${hackathonName || "Hackathon"}`;
-  const html = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(subject)}</title></head>
-<body style="margin:0;padding:28px 12px;background:#f4f4f8;font-family:Arial,Helvetica,sans-serif;color:#20213a">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center">
-    <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px;background:#fff;border:1px solid #e3e5ed">
-      <tr><td style="padding:24px;background:#24204f;color:#fff"><p style="margin:0;font-size:12px">Trizen Community · Hackathon Jury</p><h1 style="margin:12px 0 0;font-size:24px">You're invited to serve as a Jury member</h1></td></tr>
-      <tr><td style="padding:28px"><p>Hi ${safeName},</p><p>You have been invited to review teams and submissions for <strong>${safeHackathonName}</strong>.</p><p>This invitation expires on <strong>${esc(expiration)} IST</strong>. The link can be accepted once and is tied to your email address.</p>
-        <p style="text-align:center;margin:28px 0"><a href="${safeUrl}" style="display:inline-block;padding:13px 22px;background:#5146a8;color:#fff;text-decoration:none;font-weight:700">Accept invitation</a></p>
-        <p style="font-size:12px;color:#65697c;overflow-wrap:anywhere">If the button does not work, open this link:<br><a href="${safeUrl}">${safeUrl}</a></p>
-        <p>Questions? Contact <a href="mailto:community@trizenventures.com">community@trizenventures.com</a>.</p>
-      </td></tr>
-      <tr><td style="padding:16px 28px;background:#fafafe;border-top:1px solid #ececf2;font-size:12px;color:#777b94">Hyderabad Founders Network · Supported by Trizen Ventures</td></tr>
-    </table>
-  </td></tr></table>
-</body></html>`;
-  const text = [
-    `Hi ${name || "there"},`,
-    `You are invited to serve as a Jury member for ${hackathonName || "the hackathon"}.`,
-    `This invitation expires on ${expiration} IST.`,
-    `Accept invitation: ${invitationUrl || ""}`,
-    "Questions? community@trizenventures.com",
-  ].join("\n\n");
-  return { subject, html, text };
+  const event = eventName(hackathon, hackathonName);
+  const recipientEmail = String(email || "").trim();
+  const expiry = formatAbsoluteExpiry(expiresAt);
+  const acceptBy = formatDateIst(expiresAt);
+
+  return {
+    template: "hackathon_jury_invitation",
+    ...renderHackathonEmail({
+      subject: `${isResend ? "Reminder: " : ""}${withEvent(event, "Invitation to join the jury")}`,
+      preheader: acceptBy
+        ? `Accept by ${acceptBy} to review teams and submissions.`
+        : `You've been invited to join the jury for ${footerEvent(event)}.`,
+      eyebrow: event,
+      heading: "You're invited to join the jury",
+      blocks: [
+        { type: "greeting", name },
+        {
+          type: "paragraph",
+          content: [
+            "You've been invited to serve on the jury for ",
+            eventReference(event),
+            ". Jury members review the participating teams and score their project submissions on the Trizen Community jury portal.",
+          ],
+        },
+        {
+          type: "card",
+          rows: [
+            ...eventRows(hackathon, event),
+            { label: "Your role", value: "Jury member" },
+            { label: "Invited email", value: recipientEmail },
+            { label: "Accept by", value: expiry },
+          ],
+        },
+        { type: "button", url: invitationUrl, label: "Accept invitation" },
+        {
+          type: "note",
+          content: [
+            "This invitation works once and is tied to ",
+            recipientEmail ? strong(recipientEmail) : "the email address it was sent to",
+            ". New to the jury portal? Open the invitation and choose ",
+            strong("Create Jury account"),
+            ". Already have a jury account? Open the invitation and choose ",
+            strong("Sign in"),
+            " instead.",
+          ],
+        },
+        { type: "divider" },
+        {
+          type: "steps",
+          title: "What you'll do",
+          items: [
+            "Review the participating teams and their project submissions.",
+            "Score each submission against the evaluation criteria set by the organizers, and add comments.",
+            [
+              "Submit your evaluations from the jury portal. After accepting, you can sign in any time at ",
+              signInUrl ? link(signInUrl) : "the jury portal",
+              ".",
+            ],
+          ],
+        },
+        { type: "fallback", url: invitationUrl },
+      ],
+      footerNote: `You received this email because you were invited to join the jury for ${footerEvent(event)}.`,
+    }),
+  };
 }
 
 // ── Registration Confirmation ─────────────────────────────────────────────────

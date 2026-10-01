@@ -472,6 +472,7 @@ hackathonRouter.post("/team/members/invite", async (req, res) => {
     const invitations = await sendHackathonTeamInvitations({
       team,
       members: [member],
+      isResend: true,
     });
     const invitationSent = invitations.sent === 1;
 
@@ -652,6 +653,11 @@ hackathonRouter.post("/submit", upload.single("ppt"), async (req, res) => {
     if (!participantTeam.problem_statement_id) {
       return res.status(409).json({
         message: "Confirm your team's problem statement before submitting the project.",
+      });
+    }
+    if (participantTeam.submission?.submitted_at) {
+      return res.status(409).json({
+        message: "Your team has already submitted its project.",
       });
     }
 

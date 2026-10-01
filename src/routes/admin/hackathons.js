@@ -101,7 +101,7 @@ async function loadAuthorizedProgram(req, res) {
   return program;
 }
 
-async function sendInvitationEmail(invitation, program, name = "") {
+async function sendInvitationEmail(invitation, program, name = "", { isResend = false } = {}) {
   const rawToken = crypto.randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + INVITATION_TTL_MS);
   invitation.tokenHash = hashToken(rawToken);
@@ -112,13 +112,17 @@ async function sendInvitationEmail(invitation, program, name = "") {
   invitation.resendCount += 1;
   await invitation.save();
 
-  const invitationUrl = `${JURY_WEB_APP_URL.replace(/\/$/, "")}/jury/invitation#token=${encodeURIComponent(rawToken)}`;
+  const juryBaseUrl = JURY_WEB_APP_URL.replace(/\/$/, "");
+  const invitationUrl = `${juryBaseUrl}/jury/invitation#token=${encodeURIComponent(rawToken)}`;
   const result = await sendHackathonJuryInvitation({
     email: invitation.email,
     name: name || invitation.inviteeName,
     hackathonName: program.name,
     invitationUrl,
     expiresAt,
+    program,
+    isResend,
+    signInUrl: `${juryBaseUrl}/jury/login`,
   });
   invitation.deliveryStatus = result.sent ? "sent" : "failed";
   await invitation.save();
@@ -286,7 +290,7 @@ router.post(
         return res
           .status(409)
           .json({ error: "Another active invitation exists." });
-      const delivery = await sendInvitationEmail(invitation, program);
+      const delivery = await sendInvitationEmail(invitation, program, "", { isResend: true });
       return res.json({
         invitation: {
           id: String(invitation._id),
