@@ -13,6 +13,7 @@ import {
 } from "../services/emailNotification.js";
 import { HackathonProgram } from "../models/HackathonProgram.js";
 import { HackathonParticipantAccount } from "../models/HackathonParticipantAccount.js";
+import { HackathonJuryEvaluation } from "../models/HackathonJuryEvaluation.js";
 import { findAccountBySetupToken } from "../services/hackathonParticipantAuth.js";
 import { isPlatformAdmin, requireAdmin } from "../middleware/auth.js";
 
@@ -168,10 +169,6 @@ async function findTeamByParticipantEmail(hackathonId, email) {
   return teams.find((team) => team.email === email) || teams[0] || null;
 }
 
-function findLeadTeam(hackathonId, email) {
-  return Hackathon.findOne({ hackathonId, email });
-}
-
 function participantProfile(team, email) {
   if (team.email === email) {
     return { name: team.lead_name, email, phone: team.phone, role: "lead" };
@@ -194,12 +191,6 @@ hackathonRouter.post("/login", async (req, res) => {
     if (!team) {
       return res.status(401).json({ message: "Invalid email or password." });
     }
-    if (team.email !== email) {
-      return res.status(403).json({
-        code: "LEAD_ONLY",
-        message: `Only the Team Lead can sign in. Ask ${team.lead_name} to sign in to your team dashboard.`,
-      });
-    }
 
     const account = await HackathonParticipantAccount.findOne({
       hackathonId: program._id,
@@ -209,7 +200,9 @@ hackathonRouter.post("/login", async (req, res) => {
       return res.status(403).json({
         code: "PASSWORD_NOT_SET",
         message:
-          "You haven't set a password yet. Open the set-password link in your registration confirmation email, or request a new link below.",
+          team.email === email
+            ? "You haven't set a password yet. Open the set-password link in your registration confirmation email, or request a new link below."
+            : "You haven't set a password yet. Open the set-password link in your team invitation email, or request a new link below.",
       });
     }
 
@@ -240,15 +233,15 @@ hackathonRouter.post("/password/validate", async (req, res) => {
       });
     }
 
-    const team = await findLeadTeam(account.hackathonId, account.normalizedEmail);
+    const team = await findTeamByParticipantEmail(account.hackathonId, account.normalizedEmail);
     if (!team) {
       return res.status(403).json({
-        message: "Only the Team Lead can set a password for the team dashboard.",
+        message: "This email is no longer part of a registered team.",
       });
     }
     return res.status(200).json({
       email: account.normalizedEmail,
-      name: team.lead_name,
+      name: participantProfile(team, account.normalizedEmail).name,
       teamName: team.team_name,
       hasPassword: Boolean(account.passwordHash),
     });
@@ -271,9 +264,9 @@ hackathonRouter.post("/password/set", async (req, res) => {
         message: "This link is invalid or has expired. Request a new link to set your password.",
       });
     }
-    if (!(await findLeadTeam(account.hackathonId, account.normalizedEmail))) {
+    if (!(await findTeamByParticipantEmail(account.hackathonId, account.normalizedEmail))) {
       return res.status(403).json({
-        message: "Only the Team Lead can set a password for the team dashboard.",
+        message: "This email is no longer part of a registered team.",
       });
     }
 
@@ -318,11 +311,11 @@ hackathonRouter.post("/password/request-link", async (req, res) => {
     }
 
     const program = await HackathonProgram.findOne({ slug: CURRENT_HACKATHON_SLUG }).select("_id");
-    const team = program ? await findLeadTeam(program._id, email) : null;
+    const team = program ? await findTeamByParticipantEmail(program._id, email) : null;
     if (!team) {
       return res.status(404).json({
         message:
-          "No registered Team Lead account was found for this email. Use the email the team was registered with.",
+          "No team member was found with this email. Use the email your Team Lead registered you with.",
       });
     }
 
@@ -339,7 +332,7 @@ hackathonRouter.post("/password/request-link", async (req, res) => {
     const sent = await sendHackathonPasswordSetupEmail({
       hackathonId: program._id,
       email,
-      name: team.lead_name,
+      name: participantProfile(team, email).name,
       teamName: team.team_name,
     });
     if (!sent) {
@@ -496,34 +489,55 @@ hackathonRouter.post("/team/members/invite", async (req, res) => {
 
 hackathonRouter.post("/confirm-problem", async (req, res) => {
   try {
-    const { phone, email, problem_statement_id } = req.body;
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const phone = String(req.body?.phone || "").trim();
+    const statementId = String(req.body?.problem_statement_id || "").trim().toUpperCase();
     const program = await HackathonProgram.findOne({ slug: CURRENT_HACKATHON_SLUG }).select("_id");
     if (!program) return res.status(503).json({ message: "Hackathon is not configured." });
 
-    if (!problem_statement_id) {
+    if (!statementId) {
       return res
         .status(400)
         .json({ message: "Problem statement ID is required" });
     }
 
+    const team = await findParticipantTeam(email, phone);
+    if (!team) {
+      return res.status(404).json({ message: "Team not found. Please sign in again." });
+    }
+    if (team.email !== email) {
+      return res.status(403).json({
+        message: `Only your Team Lead (${team.lead_name}) can select and confirm the problem statement.`,
+      });
+    }
+    if (team.problem_statement_id) {
+      return res.status(409).json({
+        message: `Your team has already confirmed ${team.problem_statement_id}. A team can confirm only one problem statement.`,
+      });
+    }
+
     const statementExists = await ProblemStatement.exists({
       hackathonId: program._id,
-      id: String(problem_statement_id).trim().toUpperCase(),
+      id: statementId,
       $or: [{ status: "active" }, { status: { $exists: false } }],
     });
     if (!statementExists) {
       return res.status(404).json({ message: "Problem statement not found for this Hackathon." });
     }
 
-    // Find the user and update their problem statement in one step
     const user = await Hackathon.findOneAndUpdate(
-      { phone, email, hackathonId: program._id },
-      { $set: { problem_statement_id } },
-      { new: true }, // Returns the newly updated document
+      {
+        _id: team._id,
+        $or: [{ problem_statement_id: null }, { problem_statement_id: { $exists: false } }],
+      },
+      { $set: { problem_statement_id: statementId } },
+      { new: true },
     );
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(409).json({
+        message: "Your team has already confirmed a problem statement. A team can confirm only one.",
+      });
     }
 
     return res.status(200).json({
@@ -623,6 +637,21 @@ hackathonRouter.post("/submit", upload.single("ppt"), async (req, res) => {
     if (!req.file) {
       return res.status(400).json({
         message: "Please upload your PPT/PDF file.",
+      });
+    }
+
+    const participantTeam = await findParticipantTeam(String(email).trim().toLowerCase(), phone);
+    if (!participantTeam) {
+      return res.status(404).json({ message: "Team not found. Please sign in again." });
+    }
+    if (participantTeam.email !== String(email).trim().toLowerCase()) {
+      return res.status(403).json({
+        message: `Only your Team Lead (${participantTeam.lead_name}) can submit the project.`,
+      });
+    }
+    if (!participantTeam.problem_statement_id) {
+      return res.status(409).json({
+        message: "Confirm your team's problem statement before submitting the project.",
       });
     }
 
@@ -807,16 +836,46 @@ hackathonRouter.patch("/users/:id/activate", requireAdmin, requireCurrentHackath
 
 hackathonRouter.delete("/users/:id", requireAdmin, requireCurrentHackathonAdmin, async (req, res) => {
   try {
-    const user = await Hackathon.findOneAndDelete({ _id: req.params.id, hackathonId: req.adminHackathon._id });
+    if (!isPlatformAdmin(req)) {
+      return res.status(403).json({ message: "Only a Super Admin can remove registered teams." });
+    }
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: "Invalid team ID." });
+    }
 
-    if (!user) {
+    const team = await Hackathon.findOneAndDelete({ _id: req.params.id, hackathonId: req.adminHackathon._id });
+
+    if (!team) {
       return res.status(404).json({
         message: "Team not found",
       });
     }
 
+    const cleanup = [
+      HackathonJuryEvaluation.deleteMany({ hackathonId: team.hackathonId, teamId: team._id }),
+      HackathonParticipantAccount.deleteMany({
+        hackathonId: team.hackathonId,
+        normalizedEmail: {
+          $in: [team.email, ...(team.members || []).map((member) => member.email)]
+            .map((value) => String(value || "").trim().toLowerCase())
+            .filter(Boolean),
+        },
+      }),
+    ];
+    const pptFileId = String(team.submission?.ppt_url || "").split("/").pop();
+    if (mongoose.Types.ObjectId.isValid(pptFileId) && mongoose.connection.db) {
+      const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
+        bucketName: "hackathon_ppts",
+      });
+      cleanup.push(bucket.delete(new mongoose.Types.ObjectId(pptFileId)));
+    }
+    const results = await Promise.allSettled(cleanup);
+    results
+      .filter((result) => result.status === "rejected")
+      .forEach((result) => console.error("Remove team cleanup error:", result.reason));
+
     return res.status(200).json({
-      message: "Team removed successfully",
+      message: `Team "${team.team_name}" removed successfully`,
     });
   } catch (error) {
     console.error("Remove team error:", error);

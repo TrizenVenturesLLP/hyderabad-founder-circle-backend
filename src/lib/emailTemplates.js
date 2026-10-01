@@ -196,7 +196,7 @@ export function buildHackathonRegistrationConfirmationEmail({
           </table>
           <p style="margin:0 0 18px;font-size:14px;line-height:1.6;color:#51556d;">${passwordCopy}</p>
           ${hackathonEmailButton(actionUrl, hasPassword ? "Sign in" : "Set your password")}
-          <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#51556d;">Your team members get an email letting them know they've joined. Only you, as Team Lead, sign in to the team dashboard.</p>`;
+          <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#51556d;">Your team members get an invitation email with their own link to set a password and sign in. Only you, as Team Lead, can confirm the problem statement and submit the project.</p>`;
 
   const text = [
     `Hi ${name || "there"},`,
@@ -252,15 +252,21 @@ export function buildHackathonTeamInvitationEmail({
   teamLead,
   teamLeadEmail,
   memberEmail,
-  hackathonUrl,
+  actionUrl,
+  hasPassword = false,
+  expiresAt,
 }) {
   const safeName = esc(name || "there");
   const safeTeamName = esc(teamName || "your hackathon team");
   const safeTeamLead = esc(teamLead || "Your team lead");
   const safeLeadEmail = esc(teamLeadEmail || "");
-  const safeUrl = esc(hackathonUrl || "");
-  const accessCopy = `You were added with <strong style="color:#20213a;">${esc(memberEmail || "")}</strong>. ${safeTeamLead} signs in to the team dashboard to choose the problem statement and submit the project, so you don't need to sign in.`;
-  const buttonLabel = "View hackathon details";
+  const safeUrl = esc(actionUrl || "");
+  const expiry = formatLinkExpiry(expiresAt);
+  const roleCopy = `${safeTeamLead} selects and confirms the problem statement and submits the project. Once it's confirmed, you can see it on your team dashboard.`;
+  const accessCopy = hasPassword
+    ? `You already have a password. Sign in with <strong style="color:#20213a;">${esc(memberEmail || "")}</strong> to open your team dashboard. ${roleCopy}`
+    : `Set a password for <strong style="color:#20213a;">${esc(memberEmail || "")}</strong> using the button below, then sign in to your team dashboard.${expiry ? ` This link expires <strong style="color:#20213a;">${esc(expiry)}</strong> and can be used once. If it expires, use "Send me a link" on the sign-in page to get a new one.` : ""} ${roleCopy}`;
+  const buttonLabel = hasPassword ? "Sign in" : "Set your password";
   const subject = `You're invited to join ${teamName || "a team"} at the hackathon`;
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -316,8 +322,11 @@ export function buildHackathonTeamInvitationEmail({
     `Team lead email: ${teamLeadEmail || ""}`,
     `Your email: ${memberEmail || ""}`,
     "",
-    `${teamLead || "Your team lead"} signs in to the team dashboard, so you don't need to sign in.`,
-    `Hackathon details: ${hackathonUrl || ""}`,
+    hasPassword
+      ? `Sign in with ${memberEmail || ""} and your existing password: ${actionUrl || ""}`
+      : `Set your password for ${memberEmail || ""}: ${actionUrl || ""}${expiry ? `\nThis link expires ${expiry}. If it expires, use "Send me a link" on the sign-in page to get a new one.` : ""}`,
+    "",
+    `${teamLead || "Your team lead"} selects and confirms the problem statement and submits the project. Once it's confirmed, you can see it on your team dashboard.`,
     "",
     "Hyderabad Founders Network",
     "community@trizenventures.com",

@@ -346,6 +346,47 @@ router.post(
   },
 );
 
+router.delete("/:hackathonId/jury-invitations/:invitationId", async (req, res) => {
+  try {
+    const program = await loadAuthorizedProgram(req, res);
+    if (!program) return;
+    if (!mongoose.Types.ObjectId.isValid(req.params.invitationId)) {
+      return res.status(404).json({ error: "Invitation not found." });
+    }
+    const invitation = await HackathonJuryInvitation.findOne({
+      _id: req.params.invitationId,
+      hackathonId: program._id,
+    });
+    if (!invitation)
+      return res.status(404).json({ error: "Invitation not found." });
+    if (invitation.status === "accepted") {
+      const juryUser = await JuryUser.findOne({
+        normalizedEmail: invitation.normalizedEmail,
+      })
+        .select("_id")
+        .lean();
+      const activeMember =
+        juryUser &&
+        (await HackathonJuryMembership.exists({
+          hackathonId: program._id,
+          userId: juryUser._id,
+          status: "active",
+        }));
+      if (activeMember) {
+        return res.status(409).json({
+          error:
+            "This person is an active Jury member. Remove them from the Jury first.",
+        });
+      }
+    }
+    await invitation.deleteOne();
+    return res.json({ ok: true, invitationId: String(invitation._id) });
+  } catch (error) {
+    console.error("[admin/hackathons jury invitation delete]", error);
+    return res.status(500).json({ error: "Could not delete Jury invitation." });
+  }
+});
+
 router.get("/:hackathonId/jury-members", async (req, res) => {
   try {
     const program = await loadAuthorizedProgram(req, res);
@@ -446,6 +487,37 @@ router.delete("/:hackathonId/jury-members/:membershipId", async (req, res) => {
     return res.status(500).json({ error: "Could not revoke Jury membership." });
   }
 });
+
+router.delete(
+  "/:hackathonId/jury-members/:membershipId/permanent",
+  async (req, res) => {
+    try {
+      const program = await loadAuthorizedProgram(req, res);
+      if (!program) return;
+      if (!mongoose.Types.ObjectId.isValid(req.params.membershipId)) {
+        return res.status(404).json({ error: "Jury member not found." });
+      }
+      const membership = await HackathonJuryMembership.findOne({
+        _id: req.params.membershipId,
+        hackathonId: program._id,
+      });
+      if (!membership)
+        return res.status(404).json({ error: "Jury member not found." });
+      if (membership.status === "active") {
+        return res.status(409).json({
+          error: "Remove this Jury member before deleting their record.",
+        });
+      }
+      await membership.deleteOne();
+      return res.json({ ok: true, membershipId: String(membership._id) });
+    } catch (error) {
+      console.error("[admin/hackathons jury member delete]", error);
+      return res
+        .status(500)
+        .json({ error: "Could not delete Jury member record." });
+    }
+  },
+);
 
 router.get("/:hackathonId/leaderboard", async (req, res) => {
   try {

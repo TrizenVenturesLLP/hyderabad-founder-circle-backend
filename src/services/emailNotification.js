@@ -509,13 +509,16 @@ export async function sendHackathonTeamInvitations({ team, members = [] }) {
       const name = String(member.full_name || "").trim();
 
       try {
+        const access = await issuePasswordSetupLink({ hackathonId: team.hackathonId, email });
         const rendered = buildHackathonTeamInvitationEmail({
           name,
           teamName: team.team_name,
           teamLead: team.lead_name,
           teamLeadEmail: team.email,
           memberEmail: email,
-          hackathonUrl: `${WEB_APP_URL.replace(/\/$/, "")}/hackathon`,
+          actionUrl: access.url,
+          hasPassword: access.hasPassword,
+          expiresAt: access.expiresAt,
         });
         return await deliverHackathonEmail(
           { to: email, name, ...rendered },
