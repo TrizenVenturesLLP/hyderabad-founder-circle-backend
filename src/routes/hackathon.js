@@ -311,8 +311,6 @@ hackathonRouter.post("/password/set", async (req, res) => {
 });
 
 hackathonRouter.post("/password/request-link", async (req, res) => {
-  const genericMessage =
-    "If this email belongs to a registered Team Lead, we've sent a link to set your password. Check your inbox and spam folder.";
   try {
     const email = String(req.body?.email || "").trim().toLowerCase();
     if (!/^\S+@\S+\.\S+$/.test(email)) {
@@ -321,7 +319,12 @@ hackathonRouter.post("/password/request-link", async (req, res) => {
 
     const program = await HackathonProgram.findOne({ slug: CURRENT_HACKATHON_SLUG }).select("_id");
     const team = program ? await findLeadTeam(program._id, email) : null;
-    if (!team) return res.status(200).json({ message: genericMessage });
+    if (!team) {
+      return res.status(404).json({
+        message:
+          "No registered Team Lead account was found for this email. Use the email the team was registered with.",
+      });
+    }
 
     const existing = await HackathonParticipantAccount.findOne({
       hackathonId: program._id,
@@ -333,13 +336,24 @@ hackathonRouter.post("/password/request-link", async (req, res) => {
       });
     }
 
-    await sendHackathonPasswordSetupEmail({
+    const sent = await sendHackathonPasswordSetupEmail({
       hackathonId: program._id,
       email,
       name: team.lead_name,
       teamName: team.team_name,
     });
-    return res.status(200).json({ message: genericMessage });
+    if (!sent) {
+      await HackathonParticipantAccount.updateOne(
+        { hackathonId: program._id, normalizedEmail: email },
+        { $set: { lastLinkSentAt: null } },
+      );
+      return res.status(502).json({
+        message: "We couldn't send the email right now. Please try again in a minute.",
+      });
+    }
+    return res.status(200).json({
+      message: `We've sent a link to set your password to ${email}. Check your inbox and spam folder.`,
+    });
   } catch (error) {
     console.error("Hackathon password link request error:", error);
     return res.status(500).json({ message: "Could not send the link. Please try again." });
@@ -947,10 +961,13 @@ hackathonRouter.post("/problem-statements", requireAdmin, requireCurrentHackatho
     const scope = String(req.body?.scope || "").trim();
     const platform = String(req.body?.platform || "").trim();
     const domainIds = parseDomainIds(req.body);
+    const statementId =
+      String(id || "").trim().toUpperCase() ||
+      `ADM-${crypto.randomBytes(5).toString("hex").toUpperCase()}`;
 
-    if (!id || !domainIds || !title || !description) {
+    if (!domainIds || !title || !description) {
       return res.status(400).json({
-        message: "id, at least one valid domain track, title and description are required.",
+        message: "At least one valid domain track, title and description are required.",
       });
     }
     if (industry.length > 120 || platform.length > 200 || scope.length > 3000) {
@@ -960,10 +977,10 @@ hackathonRouter.post("/problem-statements", requireAdmin, requireCurrentHackatho
     }
 
     const statement = await ProblemStatement.findOneAndUpdate(
-      { id: id.trim().toUpperCase(), hackathonId: req.adminHackathon._id },
+      { id: statementId, hackathonId: req.adminHackathon._id },
       {
         hackathonId: req.adminHackathon._id,
-        id: id.trim().toUpperCase(),
+        id: statementId,
         domainId: domainIds[0],
         domainIds,
         title: title.trim(),

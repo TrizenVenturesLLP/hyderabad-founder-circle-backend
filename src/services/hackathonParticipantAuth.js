@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { HackathonParticipantAccount } from "../models/HackathonParticipantAccount.js";
 
 const WEB_APP_URL = process.env.WEB_APP_URL || "https://ty.trizenventures.com";
-export const PASSWORD_SETUP_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export const PASSWORD_SETUP_TTL_MS = 10 * 60 * 1000;
 
 export function hashSetupToken(token) {
   return crypto.createHash("sha256").update(String(token)).digest("hex");

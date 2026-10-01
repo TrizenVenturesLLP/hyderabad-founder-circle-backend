@@ -115,14 +115,12 @@ export function buildAdminCustomEmail({ subject, body }) {
   return { subject: String(subject || "").trim(), html: htmlBody, text };
 }
 
-function formatIstDate(value) {
-  return value
-    ? new Date(value).toLocaleString("en-IN", {
-        dateStyle: "medium",
-        timeStyle: "short",
-        timeZone: "Asia/Kolkata",
-      })
-    : "";
+function formatLinkExpiry(value) {
+  if (!value) return "";
+  const expiresAt = new Date(value);
+  const minutes = Math.max(1, Math.round((expiresAt.getTime() - Date.now()) / 60000));
+  const time = expiresAt.toLocaleTimeString("en-IN", { timeStyle: "short", timeZone: "Asia/Kolkata" });
+  return `in ${minutes} minute${minutes === 1 ? "" : "s"} (at ${time} IST)`;
 }
 
 function hackathonEmailShell({ subject, heading, bodyHtml }) {
@@ -176,7 +174,7 @@ export function buildHackathonRegistrationConfirmationEmail({
   expiresAt,
 }) {
   const subject = `Registration confirmed: ${teamName || "your team"}`;
-  const expiry = formatIstDate(expiresAt);
+  const expiry = formatLinkExpiry(expiresAt);
   const memberRows = members
     .map(
       (member) =>
@@ -185,7 +183,7 @@ export function buildHackathonRegistrationConfirmationEmail({
     .join("");
   const passwordCopy = hasPassword
     ? `You already have a password for this hackathon. Sign in with <strong style="color:#20213a;">${esc(leadEmail)}</strong> and your existing password.`
-    : `To sign in to your team dashboard, set a password for <strong style="color:#20213a;">${esc(leadEmail)}</strong> using the button below.${expiry ? ` This link expires on <strong style="color:#20213a;">${esc(expiry)} IST</strong> and can be used once.` : ""}`;
+    : `To sign in to your team dashboard, set a password for <strong style="color:#20213a;">${esc(leadEmail)}</strong> using the button below.${expiry ? ` This link expires <strong style="color:#20213a;">${esc(expiry)}</strong> and can be used once. If it expires, use "Send me a link" on the sign-in page to get a new one.` : ""}`;
 
   const bodyHtml = `          <p style="margin:0 0 12px;font-size:16px;line-height:1.6;">Hi ${esc(name || "there")},</p>
           <p style="margin:0 0 22px;font-size:15px;line-height:1.65;color:#51556d;">Your team <strong style="color:#20213a;">${esc(teamName || "")}</strong> is registered for the hackathon. You are the Team Lead.</p>
@@ -209,7 +207,7 @@ export function buildHackathonRegistrationConfirmationEmail({
     "",
     hasPassword
       ? `Sign in with ${leadEmail} and your existing password: ${actionUrl || ""}`
-      : `Set your password for ${leadEmail}: ${actionUrl || ""}${expiry ? `\nThis link expires on ${expiry} IST.` : ""}`,
+      : `Set your password for ${leadEmail}: ${actionUrl || ""}${expiry ? `\nThis link expires ${expiry}. If it expires, use "Send me a link" on the sign-in page to get a new one.` : ""}`,
     "",
     "Hyderabad Founders Network",
     "community@trizenventures.com",
@@ -224,16 +222,16 @@ export function buildHackathonRegistrationConfirmationEmail({
 
 export function buildHackathonPasswordSetupEmail({ name, teamName, email, setupUrl, expiresAt }) {
   const subject = "Set your hackathon password";
-  const expiry = formatIstDate(expiresAt);
+  const expiry = formatLinkExpiry(expiresAt);
   const bodyHtml = `          <p style="margin:0 0 12px;font-size:16px;line-height:1.6;">Hi ${esc(name || "there")},</p>
-          <p style="margin:0 0 18px;font-size:15px;line-height:1.65;color:#51556d;">Use the button below to set a new password for <strong style="color:#20213a;">${esc(email)}</strong>${teamName ? ` (team <strong style="color:#20213a;">${esc(teamName)}</strong>)` : ""}.${expiry ? ` This link expires on <strong style="color:#20213a;">${esc(expiry)} IST</strong> and can be used once.` : ""}</p>
+          <p style="margin:0 0 18px;font-size:15px;line-height:1.65;color:#51556d;">Use the button below to set a new password for <strong style="color:#20213a;">${esc(email)}</strong>${teamName ? ` (team <strong style="color:#20213a;">${esc(teamName)}</strong>)` : ""}.${expiry ? ` This link expires <strong style="color:#20213a;">${esc(expiry)}</strong> and can be used once.` : ""}</p>
           ${hackathonEmailButton(setupUrl, "Set your password")}
           <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#51556d;">Didn't ask for this? You can ignore this email; your current password stays the same.</p>`;
   const text = [
     `Hi ${name || "there"},`,
     "",
     `Set your hackathon password for ${email}: ${setupUrl || ""}`,
-    expiry ? `This link expires on ${expiry} IST.` : "",
+    expiry ? `This link expires ${expiry}.` : "",
     "",
     "Didn't ask for this? You can ignore this email.",
     "",

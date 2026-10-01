@@ -553,7 +553,12 @@ async function deliverHackathonEmail({ to, name, subject, html, text }, logTag) 
       throw new Error("EMAIL_SERVICE_AUTH_TOKEN is not configured in the backend environment.");
     }
 
-    const sentByService = await postToEmailService("/api/v1/email/send", message, 20000);
+    let sentByService = await postToEmailService("/api/v1/email/send", message, 20000);
+    if (sentByService === null) {
+      // The email service may be restarting; give it one more chance before SMTP.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      sentByService = await postToEmailService("/api/v1/email/send", message, 20000);
+    }
     if (sentByService === true) return true;
     if (sentByService === false) return false;
 
