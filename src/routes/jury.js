@@ -10,6 +10,7 @@ import { HackathonJuryMembership } from "../models/HackathonJuryMembership.js";
 import { HackathonJuryEvaluation } from "../models/HackathonJuryEvaluation.js";
 import { ProblemStatement } from "../models/ProblemStatement.js";
 import {
+  awaitingSubmission,
   buildHackathonLeaderboard,
   claimedStatementIds,
   juryWorkload,
@@ -227,6 +228,7 @@ function teamSummary(team) {
     members,
     problemStatementId: team.problem_statement_id,
     round: teamRound(team),
+    awaitingSubmission: awaitingSubmission(team),
     submission: {
       description: team.submission?.description || "",
       githubRepo: team.submission?.github_repo || "",
@@ -1003,7 +1005,22 @@ async function loadEvaluationContext(req, res) {
       .json({ error: `This team has not been selected for Round ${round}.` });
     return null;
   }
-  return { program, team, criteria, round, latestRound };
+  return {
+    program,
+    team,
+    criteria,
+    round,
+    latestRound,
+    awaitingSubmission: awaitingSubmission(team, round),
+  };
+}
+
+function rejectIfAwaitingSubmission(context, res) {
+  if (!context.awaitingSubmission) return false;
+  res.status(409).json({
+    error: `Round ${context.round} can be scored only after the team submits its project.`,
+  });
+  return true;
 }
 
 function evaluationKey(context, juryUserId) {
@@ -1062,6 +1079,7 @@ router.get(
         rubric: context.criteria,
         round: context.round,
         latestRound: context.latestRound,
+        awaitingSubmission: context.awaitingSubmission,
       });
     } catch (error) {
       console.error("[jury/evaluation get]", error);
@@ -1075,7 +1093,7 @@ router.put(
   async (req, res) => {
     try {
       const context = await loadEvaluationContext(req, res);
-      if (!context) return;
+      if (!context || rejectIfAwaitingSubmission(context, res)) return;
       if (Object.prototype.hasOwnProperty.call(req.body || {}, "totalScore")) {
         return res
           .status(400)
@@ -1142,7 +1160,7 @@ router.post(
   async (req, res) => {
     try {
       const context = await loadEvaluationContext(req, res);
-      if (!context) return;
+      if (!context || rejectIfAwaitingSubmission(context, res)) return;
       if (
         Object.prototype.hasOwnProperty.call(req.body || {}, "criteriaScores")
       ) {

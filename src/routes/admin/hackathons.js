@@ -738,7 +738,7 @@ router.get("/:hackathonId/evaluations", async (req, res) => {
     return res.json({
       round,
       maxRound,
-      result: roundResultFor(program, round),
+      result: round < MAX_EVALUATION_ROUNDS ? roundResultFor(program, round) : null,
       items,
       total: items.length,
       teamCount,
@@ -757,8 +757,14 @@ async function loadRoundForResult(req, res) {
   const program = await loadAuthorizedProgram(req, res);
   if (!program) return null;
   const round = parseRound(req.params.round, 0);
-  if (!round || round >= MAX_EVALUATION_ROUNDS) {
+  if (!round) {
     res.status(400).json({ error: "Invalid round." });
+    return null;
+  }
+  if (round >= MAX_EVALUATION_ROUNDS) {
+    res.status(400).json({
+      error: `Round ${MAX_EVALUATION_ROUNDS} is the final round, so it has no cutoff.`,
+    });
     return null;
   }
   return { program, round, result: roundResultFor(program, round) };

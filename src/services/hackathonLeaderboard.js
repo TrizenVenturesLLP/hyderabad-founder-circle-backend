@@ -6,11 +6,17 @@ import { ProblemStatement } from "../models/ProblemStatement.js";
 
 const roundScore = (value) => Math.round(value * 10) / 10;
 
-export const MAX_EVALUATION_ROUNDS = 10;
+/** Round 1 has a qualifying cutoff; Round 2 is the final round and has none. */
+export const MAX_EVALUATION_ROUNDS = 2;
 
 export function teamRound(team) {
   const round = Number(team?.round);
-  return Number.isInteger(round) && round >= 1 ? round : 1;
+  return Number.isInteger(round) && round >= 1 ? Math.min(round, MAX_EVALUATION_ROUNDS) : 1;
+}
+
+/** The final round can be scored only after the team has submitted its project. */
+export function awaitingSubmission(team, round = teamRound(team)) {
+  return round >= MAX_EVALUATION_ROUNDS && !team?.submission?.submitted_at;
 }
 
 /** Returns a valid round number, or `fallback` when the value is missing or invalid. */
@@ -35,14 +41,14 @@ export function roundResultFor(program, round) {
 }
 
 /**
- * A team's outcome in the latest round it took part in that has a decided result.
+ * A team's outcome in the qualifying round (Round 1), once its cutoff is decided.
  * Pass `publishedOnly` for participant-facing views.
  */
 export function teamRoundOutcome(program, team, { publishedOnly = false } = {}) {
   const latest = teamRound(team);
-  const decided = (program?.roundResults || [])
-    .filter((item) => item.round <= latest && (!publishedOnly || item.publishedAt))
-    .sort((left, right) => right.round - left.round)[0];
+  const decided = (program?.roundResults || []).find(
+    (item) => item.round < MAX_EVALUATION_ROUNDS && (!publishedOnly || item.publishedAt),
+  );
   if (!decided) return null;
   return latest > decided.round
     ? { round: decided.round, status: "qualified", nextRound: decided.round + 1 }
@@ -63,7 +69,7 @@ export async function teamRoundTotals(programId) {
   ]);
   return {
     teamCount: totals?.teamCount || 0,
-    maxRound: Math.max(1, totals?.maxRound || 1),
+    maxRound: Math.min(MAX_EVALUATION_ROUNDS, Math.max(1, totals?.maxRound || 1)),
   };
 }
 
@@ -84,7 +90,7 @@ export async function juryWorkload(programId, juryUserId) {
         status: "active",
         problem_statement_id: { $in: statementIds },
       })
-        .select("_id round")
+        .select("_id round submission.submitted_at")
         .lean()
     : [];
   const evaluated = teams.length
@@ -95,7 +101,10 @@ export async function juryWorkload(programId, juryUserId) {
         teamId: { $in: teams.map((team) => team._id) },
       })
     : 0;
-  const owed = teams.reduce((sum, team) => sum + teamRound(team), 0);
+  const owed = teams.reduce(
+    (sum, team) => sum + teamRound(team) - (awaitingSubmission(team) ? 1 : 0),
+    0,
+  );
   return {
     claimedCount: statementIds.length,
     teamCount: teams.length,
@@ -121,7 +130,7 @@ export async function buildHackathonLeaderboard(programId, round = 1) {
   ]);
 
   const maxRound = Math.max(1, ...teams.map(teamRound));
-  const decision = roundResultFor(program, round);
+  const decision = round < MAX_EVALUATION_ROUNDS ? roundResultFor(program, round) : null;
   const roundTeams = teams.filter((team) => teamRound(team) >= round);
 
   const statementIds = [
