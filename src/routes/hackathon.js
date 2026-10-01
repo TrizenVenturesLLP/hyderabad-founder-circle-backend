@@ -1,10 +1,13 @@
 import { Router } from "express";
+import crypto from "node:crypto";
 import { Hackathon } from "../models/Hackathon.js";
 import multer from "multer";
 import { HackathonSettings } from "../models/HackathonSettings.js";
 import { ProblemStatement } from "../models/ProblemStatement.js";
 import mongoose from "mongoose";
 import { sendHackathonTeamInvitations } from "../services/emailNotification.js";
+import { HackathonProgram } from "../models/HackathonProgram.js";
+import { isPlatformAdmin, requireAdmin } from "../middleware/auth.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -27,14 +30,36 @@ const upload = multer({
 });
 
 const hackathonRouter = Router();
+const CURRENT_HACKATHON_SLUG = "ai-hack-x-mrdu-2026";
+
+async function requireCurrentHackathonAdmin(req, res, next) {
+  try {
+    const program = await HackathonProgram.findOne({ slug: CURRENT_HACKATHON_SLUG });
+    if (!program) return res.status(503).json({ message: "Hackathon is not configured." });
+    if (
+      !isPlatformAdmin(req) &&
+      (!program.organizationId || String(program.organizationId) !== String(req.admin.organizationId))
+    ) {
+      return res.status(403).json({ message: "You cannot manage this Hackathon." });
+    }
+    req.adminHackathon = program;
+    return next();
+  } catch (error) {
+    console.error("[hackathon admin authorization]", error);
+    return res.status(500).json({ message: "Could not verify Hackathon access." });
+  }
+}
 
 function normalizePhone(phone) {
   return String(phone || "").replace(/\D/g, "");
 }
 
 async function findParticipantTeam(email, phone) {
+  const program = await HackathonProgram.findOne({ slug: CURRENT_HACKATHON_SLUG }).select("_id");
+  if (!program) return null;
   const normalizedPhone = normalizePhone(phone);
   const teams = await Hackathon.find({
+    hackathonId: program._id,
     $or: [{ email }, { "members.email": email }],
   });
 
@@ -52,6 +77,8 @@ async function findParticipantTeam(email, phone) {
 hackathonRouter.post("/register", async (req, res) => {
   try {
     const { team_name, lead_name, email, phone, members } = req.body;
+    const program = await HackathonProgram.findOne({ slug: CURRENT_HACKATHON_SLUG }).select("_id");
+    if (!program) return res.status(503).json({ message: "Hackathon registration is unavailable." });
 
     if (
       !team_name?.trim() ||
@@ -69,6 +96,7 @@ hackathonRouter.post("/register", async (req, res) => {
 
     const existingTeam = await Hackathon.findOne({
       email: email.toLowerCase(),
+      hackathonId: program._id,
     });
 
     if (existingTeam) {
@@ -78,6 +106,7 @@ hackathonRouter.post("/register", async (req, res) => {
     }
 
     const team = await Hackathon.create({
+      hackathonId: program._id,
       team_name: team_name.trim(),
       lead_name: lead_name.trim(),
       email: email.trim().toLowerCase(),
@@ -186,7 +215,8 @@ hackathonRouter.post("/team/members", async (req, res) => {
       return res.status(400).json({ message: "Please provide valid team member details." });
     }
 
-    const team = await Hackathon.findOne({ email: leadEmail, phone: leadPhone });
+    const program = await HackathonProgram.findOne({ slug: CURRENT_HACKATHON_SLUG }).select("_id");
+    const team = program ? await Hackathon.findOne({ email: leadEmail, phone: leadPhone, hackathonId: program._id }) : null;
     if (!team) {
       return res.status(401).json({ message: "Team lead verification failed." });
     }
@@ -253,7 +283,8 @@ hackathonRouter.post("/team/members/invite", async (req, res) => {
       return res.status(400).json({ message: "Please provide valid team and member details." });
     }
 
-    const team = await Hackathon.findOne({ email: leadEmail, phone: leadPhone });
+    const program = await HackathonProgram.findOne({ slug: CURRENT_HACKATHON_SLUG }).select("_id");
+    const team = program ? await Hackathon.findOne({ email: leadEmail, phone: leadPhone, hackathonId: program._id }) : null;
     if (!team) {
       return res.status(401).json({ message: "Team lead verification failed." });
     }
@@ -286,6 +317,8 @@ hackathonRouter.post("/team/members/invite", async (req, res) => {
 hackathonRouter.post("/confirm-problem", async (req, res) => {
   try {
     const { phone, email, problem_statement_id } = req.body;
+    const program = await HackathonProgram.findOne({ slug: CURRENT_HACKATHON_SLUG }).select("_id");
+    if (!program) return res.status(503).json({ message: "Hackathon is not configured." });
 
     if (!problem_statement_id) {
       return res
@@ -293,9 +326,18 @@ hackathonRouter.post("/confirm-problem", async (req, res) => {
         .json({ message: "Problem statement ID is required" });
     }
 
+    const statementExists = await ProblemStatement.exists({
+      hackathonId: program._id,
+      id: String(problem_statement_id).trim().toUpperCase(),
+      $or: [{ status: "active" }, { status: { $exists: false } }],
+    });
+    if (!statementExists) {
+      return res.status(404).json({ message: "Problem statement not found for this Hackathon." });
+    }
+
     // Find the user and update their problem statement in one step
     const user = await Hackathon.findOneAndUpdate(
-      { phone, email },
+      { phone, email, hackathonId: program._id },
       { $set: { problem_statement_id } },
       { new: true }, // Returns the newly updated document
     );
@@ -314,9 +356,9 @@ hackathonRouter.post("/confirm-problem", async (req, res) => {
   }
 });
 
-hackathonRouter.get("/users", async (req, res) => {
+hackathonRouter.get("/users", requireAdmin, requireCurrentHackathonAdmin, async (req, res) => {
   try {
-    const users = await Hackathon.find({});
+    const users = await Hackathon.find({ hackathonId: req.adminHackathon._id });
 
     return res.status(200).json({
       users,
@@ -330,7 +372,7 @@ hackathonRouter.get("/users", async (req, res) => {
   }
 });
 
-hackathonRouter.patch("/users/:id/evaluation", async (req, res) => {
+hackathonRouter.patch("/users/:id/evaluation", requireAdmin, requireCurrentHackathonAdmin, async (req, res) => {
   try {
     const scoreKeys = [
       "problem_understanding",
@@ -357,7 +399,7 @@ hackathonRouter.patch("/users/:id/evaluation", async (req, res) => {
       return res.status(400).json({ message: "Invalid team ID." });
     }
 
-    const user = await Hackathon.findById(req.params.id);
+    const user = await Hackathon.findOne({ _id: req.params.id, hackathonId: req.adminHackathon._id });
 
     if (!user) {
       return res.status(404).json({ message: "Team not found." });
@@ -439,8 +481,10 @@ hackathonRouter.post("/submit", upload.single("ppt"), async (req, res) => {
 
     const pptUrl = `/api/hackathon/ppt/${fileId.toString()}`;
 
+    const program = await HackathonProgram.findOne({ slug: CURRENT_HACKATHON_SLUG }).select("_id");
+    if (!program) return res.status(503).json({ message: "Hackathon is not configured." });
     const user = await Hackathon.findOneAndUpdate(
-      { email, phone },
+      { email, phone, hackathonId: program._id },
       {
         $set: {
           submission: {
@@ -476,8 +520,11 @@ hackathonRouter.post("/submit", upload.single("ppt"), async (req, res) => {
   }
 });
 
-hackathonRouter.get("/ppt/:fileId", async (req, res) => {
+hackathonRouter.get("/ppt/:fileId", requireAdmin, requireCurrentHackathonAdmin, async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.fileId)) {
+      return res.status(400).json({ message: "Invalid submission file ID." });
+    }
     const db = mongoose.connection.db;
 
     if (!db) {
@@ -496,6 +543,14 @@ hackathonRouter.get("/ppt/:fileId", async (req, res) => {
       .collection("hackathon_ppts.files")
       .find({ _id: fileId })
       .toArray();
+
+    const linkedTeam = await Hackathon.exists({
+      hackathonId: req.adminHackathon._id,
+      "submission.ppt_url": `/api/hackathon/ppt/${req.params.fileId}`,
+    });
+    if (!linkedTeam) {
+      return res.status(404).json({ message: "Submission file not found for this Hackathon." });
+    }
 
     if (!files.length) {
       return res.status(404).json({
@@ -516,10 +571,10 @@ hackathonRouter.get("/ppt/:fileId", async (req, res) => {
   }
 });
 
-hackathonRouter.patch("/users/:id/suspend", async (req, res) => {
+hackathonRouter.patch("/users/:id/suspend", requireAdmin, requireCurrentHackathonAdmin, async (req, res) => {
   try {
-    const user = await Hackathon.findByIdAndUpdate(
-      req.params.id,
+    const user = await Hackathon.findOneAndUpdate(
+      { _id: req.params.id, hackathonId: req.adminHackathon._id },
       { $set: { status: "suspended" } },
       { new: true },
     );
@@ -543,10 +598,10 @@ hackathonRouter.patch("/users/:id/suspend", async (req, res) => {
   }
 });
 
-hackathonRouter.patch("/users/:id/activate", async (req, res) => {
+hackathonRouter.patch("/users/:id/activate", requireAdmin, requireCurrentHackathonAdmin, async (req, res) => {
   try {
-    const user = await Hackathon.findByIdAndUpdate(
-      req.params.id,
+    const user = await Hackathon.findOneAndUpdate(
+      { _id: req.params.id, hackathonId: req.adminHackathon._id },
       { $set: { status: "active" } },
       { new: true },
     );
@@ -570,9 +625,9 @@ hackathonRouter.patch("/users/:id/activate", async (req, res) => {
   }
 });
 
-hackathonRouter.delete("/users/:id", async (req, res) => {
+hackathonRouter.delete("/users/:id", requireAdmin, requireCurrentHackathonAdmin, async (req, res) => {
   try {
-    const user = await Hackathon.findByIdAndDelete(req.params.id);
+    const user = await Hackathon.findOneAndDelete({ _id: req.params.id, hackathonId: req.adminHackathon._id });
 
     if (!user) {
       return res.status(404).json({
@@ -616,7 +671,7 @@ hackathonRouter.get("/release-timer", async (req, res) => {
 });
 
 // Admin saves the release timer
-hackathonRouter.put("/release-timer", async (req, res) => {
+hackathonRouter.put("/release-timer", requireAdmin, requireCurrentHackathonAdmin, async (req, res) => {
   try {
     const { releaseAt } = req.body;
 
@@ -661,7 +716,7 @@ hackathonRouter.put("/release-timer", async (req, res) => {
 });
 
 // Admin clears the timer and releases immediately
-hackathonRouter.delete("/release-timer", async (req, res) => {
+hackathonRouter.delete("/release-timer", requireAdmin, requireCurrentHackathonAdmin, async (req, res) => {
   try {
     const settings = await HackathonSettings.findOneAndUpdate(
       {},
@@ -692,7 +747,12 @@ hackathonRouter.delete("/release-timer", async (req, res) => {
 // Get all problem statements
 hackathonRouter.get("/problem-statements", async (req, res) => {
   try {
-    const statements = await ProblemStatement.find().sort({ createdAt: -1 });
+    const program = await HackathonProgram.findOne({ slug: CURRENT_HACKATHON_SLUG }).select("_id");
+    if (!program) return res.status(503).json({ message: "Hackathon is not configured." });
+    const statements = await ProblemStatement.find({
+      hackathonId: program._id,
+      $or: [{ status: "active" }, { status: { $exists: false } }],
+    }).sort({ createdAt: -1 });
 
     return res.status(200).json({
       statements,
@@ -707,7 +767,7 @@ hackathonRouter.get("/problem-statements", async (req, res) => {
 });
 
 // Create or update a problem statement
-hackathonRouter.post("/problem-statements", async (req, res) => {
+hackathonRouter.post("/problem-statements", requireAdmin, requireCurrentHackathonAdmin, async (req, res) => {
   try {
     const {
       id,
@@ -718,21 +778,33 @@ hackathonRouter.post("/problem-statements", async (req, res) => {
       description,
       deliverables,
     } = req.body;
+    const industry = String(req.body?.industry || "").trim();
+    const scope = String(req.body?.scope || "").trim();
+    const platform = String(req.body?.platform || "").trim();
 
     if (!id || !domainId || !title || !description) {
       return res.status(400).json({
         message: "id, domainId, title and description are required.",
       });
     }
+    if (industry.length > 120 || platform.length > 200 || scope.length > 3000) {
+      return res.status(400).json({
+        message: "Industry, scope, or platform/tech exceeds the allowed length.",
+      });
+    }
 
     const statement = await ProblemStatement.findOneAndUpdate(
-      { id: id.trim().toUpperCase() },
+      { id: id.trim().toUpperCase(), hackathonId: req.adminHackathon._id },
       {
+        hackathonId: req.adminHackathon._id,
         id: id.trim().toUpperCase(),
         domainId,
         title: title.trim(),
         category: category?.trim() || "General",
         difficulty: difficulty || "Intermediate",
+        industry,
+        scope,
+        platform,
         description: description.trim(),
         deliverables: Array.isArray(deliverables) ? deliverables : [],
       },
@@ -757,10 +829,73 @@ hackathonRouter.post("/problem-statements", async (req, res) => {
 });
 
 // Delete a problem statement
-hackathonRouter.delete("/problem-statements/:id", async (req, res) => {
+hackathonRouter.post("/problem-statements/bulk", requireAdmin, requireCurrentHackathonAdmin, async (req, res) => {
+  try {
+    const items = req.body?.statements;
+    if (!Array.isArray(items) || items.length < 1 || items.length > 100) {
+      return res.status(400).json({ message: "Provide between 1 and 100 problem statements." });
+    }
+    if (items.some((item) => {
+      const domainId = String(item?.domainId || "").trim();
+      return !["ui-ux", "web-dev", "vibe-coding", "agentic-ai"].includes(domainId) ||
+        !["Beginner", "Intermediate", "Advanced"].includes(item?.difficulty || "Intermediate") ||
+        !String(item?.title || "").trim() ||
+        !String(item?.description || "").trim() ||
+        String(item?.title || "").length > 200 ||
+        String(item?.description || "").length > 10000 ||
+        String(item?.industry || "").length > 120 ||
+        String(item?.platform || "").length > 200 ||
+        String(item?.scope || "").length > 3000 ||
+        (item?.deliverables !== undefined && (!Array.isArray(item.deliverables) || item.deliverables.length > 30));
+    })) {
+      return res.status(400).json({ message: "Problem statements contain invalid fields." });
+    }
+    const created = [];
+    for (const item of items) {
+      const title = String(item?.title || "").trim();
+      const description = String(item?.description || "").trim();
+      const domainId = String(item?.domainId || "").trim();
+      if (!title || !description || !domainId) {
+        return res.status(400).json({ message: "Every statement needs a domain, title, and description." });
+      }
+      const id = `ADM-${crypto.randomBytes(5).toString("hex").toUpperCase()}`;
+      created.push(await ProblemStatement.create({
+        hackathonId: req.adminHackathon._id,
+        createdBy: null,
+        id,
+        domainId,
+        title,
+        category: String(item.category || "General").trim(),
+        difficulty: item.difficulty || "Intermediate",
+        industry: String(item.industry || "").trim(),
+        scope: String(item.scope || "").trim(),
+        platform: String(item.platform || "").trim(),
+        description,
+        deliverables: Array.isArray(item.deliverables) ? item.deliverables : [],
+      }));
+    }
+    return res.status(201).json({ statements: created });
+  } catch (error) {
+    console.error("Bulk add problem statements error:", error);
+    return res.status(500).json({ message: "Could not import problem statements." });
+  }
+});
+
+hackathonRouter.delete("/problem-statements", requireAdmin, requireCurrentHackathonAdmin, async (req, res) => {
+  try {
+    const result = await ProblemStatement.deleteMany({ hackathonId: req.adminHackathon._id });
+    return res.json({ ok: true, deletedCount: result.deletedCount || 0 });
+  } catch (error) {
+    console.error("Clear problem statements error:", error);
+    return res.status(500).json({ message: "Could not clear problem statements." });
+  }
+});
+
+hackathonRouter.delete("/problem-statements/:id", requireAdmin, requireCurrentHackathonAdmin, async (req, res) => {
   try {
     const statement = await ProblemStatement.findOneAndDelete({
       id: req.params.id.toUpperCase(),
+      hackathonId: req.adminHackathon._id,
     });
 
     if (!statement) {

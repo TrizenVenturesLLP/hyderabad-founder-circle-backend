@@ -196,6 +196,44 @@ export function buildHackathonTeamInvitationEmail({
   return { subject, html, text };
 }
 
+export function buildHackathonJuryInvitationEmail({
+  name,
+  hackathonName,
+  invitationUrl,
+  expiresAt,
+}) {
+  const safeName = esc(name || "there");
+  const safeHackathonName = esc(hackathonName || "the hackathon");
+  const safeUrl = esc(invitationUrl || "");
+  const expiration = expiresAt
+    ? new Date(expiresAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" })
+    : "the stated expiry date";
+  const subject = `Jury invitation: ${hackathonName || "Hackathon"}`;
+  const html = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(subject)}</title></head>
+<body style="margin:0;padding:28px 12px;background:#f4f4f8;font-family:Arial,Helvetica,sans-serif;color:#20213a">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center">
+    <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px;background:#fff;border:1px solid #e3e5ed">
+      <tr><td style="padding:24px;background:#24204f;color:#fff"><p style="margin:0;font-size:12px">Trizen Community · Hackathon Jury</p><h1 style="margin:12px 0 0;font-size:24px">You're invited to serve as a Jury member</h1></td></tr>
+      <tr><td style="padding:28px"><p>Hi ${safeName},</p><p>You have been invited to review teams and submissions for <strong>${safeHackathonName}</strong>.</p><p>This invitation expires on <strong>${esc(expiration)} IST</strong>. The link can be accepted once and is tied to your email address.</p>
+        <p style="text-align:center;margin:28px 0"><a href="${safeUrl}" style="display:inline-block;padding:13px 22px;background:#5146a8;color:#fff;text-decoration:none;font-weight:700">Accept invitation</a></p>
+        <p style="font-size:12px;color:#65697c;overflow-wrap:anywhere">If the button does not work, open this link:<br><a href="${safeUrl}">${safeUrl}</a></p>
+        <p>Questions? Contact <a href="mailto:community@trizenventures.com">community@trizenventures.com</a>.</p>
+      </td></tr>
+      <tr><td style="padding:16px 28px;background:#fafafe;border-top:1px solid #ececf2;font-size:12px;color:#777b94">Hyderabad Founders Network · Supported by Trizen Ventures</td></tr>
+    </table>
+  </td></tr></table>
+</body></html>`;
+  const text = [
+    `Hi ${name || "there"},`,
+    `You are invited to serve as a Jury member for ${hackathonName || "the hackathon"}.`,
+    `This invitation expires on ${expiration} IST.`,
+    `Accept invitation: ${invitationUrl || ""}`,
+    "Questions? community@trizenventures.com",
+  ].join("\n\n");
+  return { subject, html, text };
+}
+
 // ── Registration Confirmation ─────────────────────────────────────────────────
 
 export function buildRsvpConfirmationEmail(data) {

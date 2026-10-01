@@ -5,6 +5,7 @@ import {
   buildInvoiceEmail,
   buildAdminCustomEmail,
   buildHackathonTeamInvitationEmail,
+  buildHackathonJuryInvitationEmail,
 } from "../lib/emailTemplates.js";
 import { generateInvoicePdf } from "../lib/invoicePdf.js";
 
@@ -558,4 +559,36 @@ export async function sendHackathonTeamInvitations({ team, members = [] }) {
     sent: results.filter(Boolean).length,
     failed: results.filter((sent) => !sent).length,
   };
+}
+
+export async function sendHackathonJuryInvitation({ email, name, hackathonName, invitationUrl, expiresAt }) {
+  if (!EMAIL_SERVICE_AUTH_TOKEN) {
+    return { sent: false, error: "Email service authentication is not configured." };
+  }
+
+  const rendered = buildHackathonJuryInvitationEmail({
+    name,
+    hackathonName,
+    invitationUrl,
+    expiresAt,
+  });
+  const message = {
+    to: email,
+    name,
+    subject: rendered.subject,
+    html: rendered.html,
+    text: rendered.text,
+    supportEmail: "community@trizenventures.com",
+  };
+
+  try {
+    const serviceResult = await postToEmailService("/api/v1/email/send", message, 20000);
+    if (serviceResult === true) return { sent: true };
+    if (serviceResult === false) return { sent: false, error: "Email service rejected the message." };
+    await sendDirectMail({ ...message, senderName: "Hyderabad Founders Network" });
+    return { sent: true };
+  } catch (error) {
+    console.error("[jury-invitation] Email delivery failed:", error instanceof Error ? error.message : error);
+    return { sent: false, error: "Invitation email could not be delivered." };
+  }
 }

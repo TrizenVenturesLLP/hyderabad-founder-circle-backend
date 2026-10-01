@@ -2,6 +2,12 @@ import mongoose from "mongoose";
 
 const hackathonSchema = new mongoose.Schema(
   {
+    hackathonId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "HackathonProgram",
+      default: null,
+      index: true,
+    },
     team_name: {
       type: String,
       required: true,
