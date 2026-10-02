@@ -1,0 +1,32 @@
+{
+  "programs": [
+    {
+      "_id": "6abdd63d1de0d6770f316f1b",
+      "roundResults": [
+        {
+          "round": 1,
+          "cutoff": 10,
+          "qualifiedCount": 1,
+          "disqualifiedCount": 0,
+          "decidedAt": "2026-10-01T14:32:18.214Z",
+          "publishedAt": null
+        },
+        {
+          "round": 2,
+          "cutoff": 80,
+          "qualifiedCount": 1,
+          "disqualifiedCount": 0,
+          "decidedAt": "2026-10-01T14:34:58.593Z",
+          "publishedAt": "2026-10-01T14:35:16.323Z"
+        }
+      ]
+    }
+  ],
+  "teams": [
+    {
+      "_id": "6abe06bd41b1815ba89b670f",
+      "hackathonId": "6abdd63d1de0d6770f316f1b",
+      "round": 3
+    }
+  ]
+}

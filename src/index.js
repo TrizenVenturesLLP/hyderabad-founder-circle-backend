@@ -1,4 +1,5 @@
 import "dotenv/config";
+import dns from "node:dns";
 import express from "express";
 import mongoose from "mongoose";
 import rsvpRouter from "./routes/rsvp.js";
@@ -9,6 +10,7 @@ import adminAuthRouter from "./routes/admin/auth.js";
 import adminRsvpsRouter from "./routes/admin/rsvps.js";
 import adminContactsRouter from "./routes/admin/contacts.js";
 import adminEventsRouter from "./routes/admin/events.js";
+import adminHackathonsRouter from "./routes/admin/hackathons.js";
 import adminEmailsRouter from "./routes/admin/emails.js";
 import adminOrgApplicationsRouter from "./routes/admin/orgApplications.js";
 import orgApplicationsRouter from "./routes/orgApplications.js";
@@ -18,11 +20,37 @@ import {
 } from "./routes/analytics.js";
 import { seedAdminAndEvents } from "./services/seed.js";
 import { ensureRsvpIndexes } from "./services/ensureRsvpIndexes.js";
+import { ensureEvaluationRounds } from "./services/ensureEvaluationRounds.js";
 import { Event } from "./models/Event.js";
+import hackathonRouter from "./routes/hackathon.js";
+import juryRouter from "./routes/jury.js";
 
 const PORT = Number(process.env.PORT) || 80;
 const MONGODB_URI = process.env.MONGODB_URI || "";
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "";
+const DNS_FALLBACK_SERVERS = ["8.8.8.8", "8.8.4.4"];
+
+function configureDnsFallback() {
+  try {
+    dns.setServers(DNS_FALLBACK_SERVERS);
+  } catch (error) {
+    console.warn(
+      "Unable to override DNS servers for MongoDB; continuing with platform defaults.",
+      error,
+    );
+  }
+
+  try {
+    dns.setDefaultResultOrder?.("ipv4first");
+  } catch (error) {
+    console.warn(
+      "Unable to set IPv4-first DNS result order; continuing with platform defaults.",
+      error,
+    );
+  }
+}
+
+configureDnsFallback();
 
 /** Always allow these production frontends even if CapRover CORS_ORIGIN is outdated. */
 const HARDCODED_ORIGINS = [
@@ -108,9 +136,7 @@ app.get("/sitemap.xml", async (_req, res) => {
     const staticPaths = ["/", "/events", "/about", "/contact", "/host"];
     let eventPaths = [];
     if (mongoReady) {
-      const events = await Event.find({})
-        .select("slug updatedAt")
-        .lean();
+      const events = await Event.find({}).select("slug updatedAt").lean();
       eventPaths = events
         .filter((e) => e.slug)
         .map((e) => ({
@@ -163,10 +189,13 @@ app.use("/api/admin/auth", adminAuthRouter);
 app.use("/api/admin/rsvps", adminRsvpsRouter);
 app.use("/api/admin/contacts", adminContactsRouter);
 app.use("/api/admin/events", adminEventsRouter);
+app.use("/api/admin/hackathons", adminHackathonsRouter);
 app.use("/api/admin/emails", adminEmailsRouter);
 app.use("/api/admin/org-applications", adminOrgApplicationsRouter);
 app.use("/api/admin/analytics", analyticsAdminRouter);
 app.use("/api/org-applications", orgApplicationsRouter);
+app.use("/api/hackathon", hackathonRouter);
+app.use("/api/jury", juryRouter);
 
 async function connectMongoWithRetry() {
   if (!MONGODB_URI) {
@@ -181,6 +210,7 @@ async function connectMongoWithRetry() {
     try {
       await mongoose.connect(MONGODB_URI, {
         serverSelectionTimeoutMS: 10000,
+        family: 4,
       });
       mongoReady = true;
       console.log("Connected to MongoDB");
@@ -193,13 +223,21 @@ async function connectMongoWithRetry() {
         );
       }
       try {
-        await seedAdminAndEvents();
+        await ensureEvaluationRounds();
+      } catch (roundErr) {
+        console.error(
+          "[evaluation-rounds] Failed:",
+          roundErr instanceof Error ? roundErr.message : roundErr,
+        );
+      }
+      /*try {
+        // await seedAdminAndEvents();
       } catch (seedErr) {
         console.error(
           "[seed] Failed:",
           seedErr instanceof Error ? seedErr.message : seedErr,
         );
-      }
+      }*/
       return;
     } catch (err) {
       mongoReady = false;
@@ -208,11 +246,15 @@ async function connectMongoWithRetry() {
         err instanceof Error ? err.message : err,
       );
       if (attempt < maxAttempts) {
-        await new Promise((r) => setTimeout(r, Math.min(attempt * 1500, 10000)));
+        await new Promise((r) =>
+          setTimeout(r, Math.min(attempt * 1500, 10000)),
+        );
       }
     }
   }
-  console.error("Could not connect to MongoDB after retries. API will stay degraded.");
+  console.error(
+    "Could not connect to MongoDB after retries. API will stay degraded.",
+  );
 }
 
 async function start() {

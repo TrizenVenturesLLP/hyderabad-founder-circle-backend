@@ -79,7 +79,13 @@ const eventSchema = new mongoose.Schema(
       lowercase: true,
     },
     title: { type: String, required: true, trim: true },
+    kind: {
+      type: String,
+      enum: ["meetup", "hackathon"],
+      default: "meetup",
+    },
     dateISO: { type: String, required: true, trim: true },
+    endDateISO: { type: String, trim: true, default: "" },
     dateLabel: { type: String, required: true, trim: true },
     dateConfirmed: { type: Boolean, default: false },
     time: { type: String, required: true, trim: true },

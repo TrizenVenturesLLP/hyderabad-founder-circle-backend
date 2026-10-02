@@ -3,6 +3,15 @@
  * Mirrors the templates in hfn_email_service.
  */
 
+import {
+  formatAbsoluteExpiry,
+  formatDateIst,
+  link,
+  muted,
+  renderHackathonEmail,
+  strong,
+} from "./hackathonEmailLayout.js";
+
 function esc(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -74,7 +83,7 @@ export function wrapAdminEmailHtml({ title = "Hyderabad Founders Network", bodyH
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f1ea;padding:32px 16px;">
 <tr><td align="center">
 <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.08);">
-<tr><td style="background:#1f1a17;color:#fff;padding:14px 24px;font-size:13px;letter-spacing:.08em;text-align:center;text-transform:uppercase;">${eventTitle}</td></tr>
+<tr><td style="background:#1f1a17;color:#fff;padding:14px 24px;font-size:13px;letter-spacing:.08em;text-align:center;text-transform:uppercase;">${heading}</td></tr>
 <tr><td style="padding:28px 32px 8px;">
 ${bodyHtml}
 </td></tr>
@@ -113,6 +122,348 @@ export function buildAdminCustomEmail({ subject, body }) {
         .trim();
 
   return { subject: String(subject || "").trim(), html: htmlBody, text };
+}
+
+// ── Hackathon emails ─────────────────────────────────────────────────────────
+// Built on the shared layout in hackathonEmailLayout.js. Every builder returns
+// { template, subject, html, text }; `template` identifies the email in logs.
+
+function eventName(hackathon, fallbackName = "") {
+  return String(hackathon?.name || fallbackName || "").trim();
+}
+
+function withEvent(event, action) {
+  return event ? `${event} — ${action}` : action;
+}
+
+function eventReference(event) {
+  return event ? strong(event) : "your hackathon";
+}
+
+function footerEvent(event) {
+  return event || "a hackathon on Trizen Community";
+}
+
+function venueLabel(hackathon) {
+  const venue = String(hackathon?.venueName || "").trim();
+  const city = String(hackathon?.city || "").trim();
+  if (!venue) return city;
+  return city && !venue.toLowerCase().includes(city.toLowerCase()) ? `${venue}, ${city}` : venue;
+}
+
+function eventRows(hackathon, event) {
+  return [
+    { label: "Hackathon", value: event },
+    { label: "Dates", value: hackathon?.dateLabel },
+    { label: "Venue", value: venueLabel(hackathon) },
+  ];
+}
+
+function signInPage(signInUrl) {
+  return signInUrl ? link(signInUrl, "sign-in page") : "sign-in page";
+}
+
+export function buildHackathonRegistrationConfirmationEmail({
+  name,
+  teamName,
+  leadEmail,
+  members = [],
+  actionUrl,
+  hasPassword = false,
+  expiresAt,
+  hackathon = {},
+  signInUrl = "",
+}) {
+  const event = eventName(hackathon);
+  const team = String(teamName || "").trim();
+  const email = String(leadEmail || "").trim();
+  const expiry = hasPassword ? "" : formatAbsoluteExpiry(expiresAt);
+  const memberLines = members
+    .filter((member) => member?.full_name || member?.email)
+    .map((member) => [
+      String(member.full_name || member.email),
+      member.full_name && member.email ? muted(` · ${member.email}`) : "",
+    ]);
+
+  return {
+    template: "hackathon_registration",
+    ...renderHackathonEmail({
+      subject: withEvent(event, team ? `Registration confirmed for ${team}` : "Registration confirmed"),
+      preheader: event
+        ? `Your team registration for ${event} is confirmed.`
+        : "Your team registration is confirmed.",
+      eyebrow: event,
+      heading: "Your team is registered",
+      blocks: [
+        { type: "greeting", name },
+        {
+          type: "paragraph",
+          content: ["Your team ", strong(team), " is registered for ", eventReference(event), ". You're the Team Lead."],
+        },
+        {
+          type: "card",
+          rows: [
+            ...eventRows(hackathon, event),
+            { label: "Team", value: team },
+            { label: "Your role", value: "Team Lead" },
+            { label: "Members", lines: memberLines },
+          ],
+        },
+        {
+          type: "paragraph",
+          content: hasPassword
+            ? ["You already have a password for this account. Sign in with ", strong(email), " to open your team dashboard."]
+            : ["Set a password for ", strong(email), " to sign in to your team dashboard."],
+        },
+        { type: "button", url: actionUrl, label: hasPassword ? "Sign in to your dashboard" : "Set your password" },
+        expiry && {
+          type: "note",
+          content: [
+            `This one-time link expires at ${expiry}. If it expires, use `,
+            strong("Send me a link"),
+            " on the ",
+            signInPage(signInUrl),
+            " to get a new one.",
+          ],
+        },
+        { type: "divider" },
+        {
+          type: "steps",
+          title: "Next steps",
+          items: [
+            memberLines.length > 0 && "Each team member gets an invitation email to set their own password.",
+            "Choose your problem statement on the team dashboard and confirm it. Only the Team Lead can confirm.",
+            "Submit your project from your problem statement page. Only the Team Lead can submit, and each team submits once.",
+          ].filter(Boolean),
+        },
+        { type: "fallback", url: actionUrl },
+      ],
+      footerNote: `You received this email because you registered a team for ${footerEvent(event)}.`,
+    }),
+  };
+}
+
+/**
+ * `intent` is "setup" for accounts without a password and "reset" when the
+ * account already has one; the link and token behave the same either way.
+ */
+export function buildHackathonPasswordSetupEmail({
+  name,
+  teamName,
+  email,
+  setupUrl,
+  expiresAt,
+  hackathon = {},
+  intent = "setup",
+  signInUrl = "",
+}) {
+  const event = eventName(hackathon);
+  const isReset = intent === "reset";
+  const action = isReset ? "Reset your password" : "Set your password";
+  const expiry = formatAbsoluteExpiry(expiresAt);
+  const account = event || "Trizen Community";
+
+  return {
+    template: isReset ? "hackathon_password_reset" : "hackathon_password_setup",
+    ...renderHackathonEmail({
+      subject: event ? `${action} — ${event}` : action,
+      preheader: isReset
+        ? `Reset the password for your ${account} account.`
+        : `Set your password to access your ${account} account.`,
+      eyebrow: event,
+      heading: action,
+      blocks: [
+        { type: "greeting", name },
+        {
+          type: "paragraph",
+          content: isReset
+            ? ["We received a request to reset the password for your ", eventReference(event), " account. Use the button below to choose a new one."]
+            : ["Set a password for your ", eventReference(event), " account. You'll use it with your email address to sign in to your team dashboard."],
+        },
+        {
+          type: "card",
+          rows: [
+            { label: "Account", value: email },
+            { label: "Team", value: teamName },
+            { label: "Hackathon", value: event },
+          ],
+        },
+        { type: "button", url: setupUrl, label: isReset ? "Reset password" : "Set your password" },
+        {
+          type: "note",
+          content: [
+            expiry ? `This link works once and expires at ${expiry}. ` : "This link works once. ",
+            "Need another? Request a new link from the ",
+            signInPage(signInUrl),
+            ".",
+          ],
+        },
+        isReset
+          ? {
+              type: "callout",
+              content: [strong("Didn't request this?"), " Your current password remains unchanged. You can safely ignore this email."],
+            }
+          : { type: "note", content: "Didn't request this link? You can ignore this email." },
+        { type: "fallback", url: setupUrl },
+      ],
+      footerNote: isReset
+        ? `You received this email because a password reset was requested for your ${account} account.`
+        : `You received this email because a password link was requested for your ${account} account.`,
+    }),
+  };
+}
+
+export function buildHackathonTeamInvitationEmail({
+  name,
+  teamName,
+  teamLead,
+  teamLeadEmail,
+  memberEmail,
+  actionUrl,
+  hasPassword = false,
+  expiresAt,
+  hackathon = {},
+  isResend = false,
+  signInUrl = "",
+}) {
+  const event = eventName(hackathon);
+  const team = String(teamName || "").trim() || "your team";
+  const lead = String(teamLead || "").trim() || "Your Team Lead";
+  const leadEmail = String(teamLeadEmail || "").trim();
+  const email = String(memberEmail || "").trim();
+  const expiry = hasPassword ? "" : formatAbsoluteExpiry(expiresAt);
+
+  return {
+    template: "hackathon_team_invitation",
+    ...renderHackathonEmail({
+      subject: `${isResend ? "Reminder: " : ""}${withEvent(event, `${lead} added you to ${team}`)}`,
+      preheader: `${lead} added you to ${team}${event ? ` for ${event}` : ""}.`,
+      eyebrow: event,
+      heading: `You've been added to ${team}`,
+      blocks: [
+        { type: "greeting", name },
+        {
+          type: "paragraph",
+          content: [
+            strong(lead),
+            " added you to ",
+            strong(team),
+            event ? [" for ", strong(event)] : "",
+            ". ",
+            hasPassword
+              ? "You already have a password, so you can sign in to your team dashboard right away."
+              : "Set a password to sign in to your team dashboard.",
+          ],
+        },
+        {
+          type: "card",
+          rows: [
+            ...eventRows(hackathon, event),
+            { label: "Team", value: team },
+            { label: "Team Lead", value: leadEmail ? [lead, muted(" · "), link(`mailto:${leadEmail}`, leadEmail)] : lead },
+            { label: "Your role", value: "Team Member" },
+            { label: "Sign-in email", value: email },
+          ],
+        },
+        { type: "button", url: actionUrl, label: hasPassword ? "Sign in" : "Set your password" },
+        expiry && {
+          type: "note",
+          content: [
+            `This one-time link expires at ${expiry}. If it expires, open the `,
+            signInPage(signInUrl),
+            ", choose ",
+            strong("Send me a link"),
+            " and enter ",
+            email ? strong(email) : "your email address",
+            ".",
+          ],
+        },
+        {
+          type: "note",
+          content: `${lead} confirms the team's problem statement and submits the project. Once the problem statement is confirmed, you'll see it on your team dashboard.`,
+        },
+        { type: "fallback", url: actionUrl },
+      ],
+      footerNote: `You received this email because ${lead} added you to a team for ${footerEvent(event)}.`,
+    }),
+  };
+}
+
+export function buildHackathonJuryInvitationEmail({
+  name,
+  email = "",
+  hackathonName,
+  invitationUrl,
+  expiresAt,
+  hackathon = {},
+  isResend = false,
+  signInUrl = "",
+}) {
+  const event = eventName(hackathon, hackathonName);
+  const recipientEmail = String(email || "").trim();
+  const expiry = formatAbsoluteExpiry(expiresAt);
+  const acceptBy = formatDateIst(expiresAt);
+
+  return {
+    template: "hackathon_jury_invitation",
+    ...renderHackathonEmail({
+      subject: `${isResend ? "Reminder: " : ""}${withEvent(event, "Invitation to join the jury")}`,
+      preheader: acceptBy
+        ? `Accept by ${acceptBy} to review teams and submissions.`
+        : `You've been invited to join the jury for ${footerEvent(event)}.`,
+      eyebrow: event,
+      heading: "You're invited to join the jury",
+      blocks: [
+        { type: "greeting", name },
+        {
+          type: "paragraph",
+          content: [
+            "You've been invited to serve on the jury for ",
+            eventReference(event),
+            ". Jury members review the participating teams and score their project submissions on the Trizen Community jury portal.",
+          ],
+        },
+        {
+          type: "card",
+          rows: [
+            ...eventRows(hackathon, event),
+            { label: "Your role", value: "Jury member" },
+            { label: "Invited email", value: recipientEmail },
+            { label: "Accept by", value: expiry },
+          ],
+        },
+        { type: "button", url: invitationUrl, label: "Accept invitation" },
+        {
+          type: "note",
+          content: [
+            "This invitation works once and is tied to ",
+            recipientEmail ? strong(recipientEmail) : "the email address it was sent to",
+            ". New to the jury portal? Open the invitation and choose ",
+            strong("Create Jury account"),
+            ". Already have a jury account? Open the invitation and choose ",
+            strong("Sign in"),
+            " instead.",
+          ],
+        },
+        { type: "divider" },
+        {
+          type: "steps",
+          title: "What you'll do",
+          items: [
+            "Review the participating teams and their project submissions.",
+            "Score each submission against the evaluation criteria set by the organizers, and add comments.",
+            [
+              "Submit your evaluations from the jury portal. After accepting, you can sign in any time at ",
+              signInUrl ? link(signInUrl) : "the jury portal",
+              ".",
+            ],
+          ],
+        },
+        { type: "fallback", url: invitationUrl },
+      ],
+      footerNote: `You received this email because you were invited to join the jury for ${footerEvent(event)}.`,
+    }),
+  };
 }
 
 // ── Registration Confirmation ─────────────────────────────────────────────────
