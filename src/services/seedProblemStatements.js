@@ -524,6 +524,16 @@ export async function seedProblemStatements() {
       // index might not exist, ignore
     }
 
+    const validSlugs = problemStatementsData.map((p) => p.slug);
+
+    // Remove old/temporary problem statements not in the official list
+    const deleteResult = await ProblemStatement.deleteMany({
+      slug: { $nin: validSlugs }
+    });
+    if (deleteResult.deletedCount > 0) {
+      console.log(`[seed] Removed ${deleteResult.deletedCount} temporary/old problem statements.`);
+    }
+
     for (const item of problemStatementsData) {
       await ProblemStatement.findOneAndUpdate(
         { slug: item.slug },
