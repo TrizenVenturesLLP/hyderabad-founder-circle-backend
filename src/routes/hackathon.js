@@ -3,7 +3,11 @@ import crypto from "node:crypto";
 import { Hackathon } from "../models/Hackathon.js";
 import multer from "multer";
 import { HackathonSettings } from "../models/HackathonSettings.js";
-import { ProblemStatement, TEAM_PROPOSAL_LIMIT } from "../models/ProblemStatement.js";
+import {
+  ProblemStatement,
+  TEAM_PROPOSAL_LIMIT,
+  DEFAULT_PROBLEM_STATEMENT_CONTACT_INFO,
+} from "../models/ProblemStatement.js";
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import {
@@ -1136,6 +1140,7 @@ hackathonRouter.get("/problem-statements", async (req, res) => {
       // Team proposals are reserved for the team that proposed them.
       statements: statements.map(({ proposedByTeam, ...statement }) => ({
         ...statement,
+        contactInfo: statement.contactInfo || DEFAULT_PROBLEM_STATEMENT_CONTACT_INFO,
         teamProposal: Boolean(proposedByTeam),
         available: !proposedByTeam,
       })),
@@ -1157,10 +1162,16 @@ hackathonRouter.post("/problem-statements", requireAdmin, requireCurrentHackatho
       title,
       category,
       difficulty,
+      organization,
+      contactInfo,
       description,
       deliverables,
     } = req.body;
     const industry = String(req.body?.industry || "").trim();
+    const organizationValue = String(organization || "").trim();
+    const contactInfoValue = String(
+      contactInfo === undefined ? DEFAULT_PROBLEM_STATEMENT_CONTACT_INFO : contactInfo,
+    ).trim();
     const scope = String(req.body?.scope || "").trim();
     const platform = String(req.body?.platform || "").trim();
     const domainIds = parseDomainIds(req.body);
@@ -1178,6 +1189,9 @@ hackathonRouter.post("/problem-statements", requireAdmin, requireCurrentHackatho
         message: "Industry, scope, or platform/tech exceeds the allowed length.",
       });
     }
+    if (!contactInfoValue || organizationValue.length > 200 || contactInfoValue.length > 200) {
+      return res.status(400).json({ message: "Contact info is required and text fields must be within the allowed length." });
+    }
 
     const statement = await ProblemStatement.findOneAndUpdate(
       { id: statementId, hackathonId: req.adminHackathon._id },
@@ -1187,6 +1201,8 @@ hackathonRouter.post("/problem-statements", requireAdmin, requireCurrentHackatho
         domainId: domainIds[0],
         domainIds,
         title: title.trim(),
+        organization: organizationValue,
+        contactInfo: contactInfoValue,
         category: category?.trim() || "General",
         difficulty: difficulty || "Intermediate",
         industry,
@@ -1252,6 +1268,8 @@ hackathonRouter.post("/problem-statements/bulk", requireAdmin, requireCurrentHac
         domainId: domainIds[0],
         domainIds,
         title,
+        organization: String(item.organization || "").trim(),
+        contactInfo: String(item.contactInfo || DEFAULT_PROBLEM_STATEMENT_CONTACT_INFO).trim() || DEFAULT_PROBLEM_STATEMENT_CONTACT_INFO,
         category: String(item.category || "General").trim(),
         difficulty: item.difficulty || "Intermediate",
         industry: String(item.industry || "").trim(),

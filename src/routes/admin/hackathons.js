@@ -6,7 +6,11 @@ import { HackathonJuryInvitation } from "../../models/HackathonJuryInvitation.js
 import { HackathonJuryMembership } from "../../models/HackathonJuryMembership.js";
 import { HackathonJuryEvaluation } from "../../models/HackathonJuryEvaluation.js";
 import { Hackathon } from "../../models/Hackathon.js";
-import { ProblemStatement, TEAM_PROPOSAL_LIMIT } from "../../models/ProblemStatement.js";
+import {
+  ProblemStatement,
+  TEAM_PROPOSAL_LIMIT,
+  DEFAULT_PROBLEM_STATEMENT_CONTACT_INFO,
+} from "../../models/ProblemStatement.js";
 import { JuryUser } from "../../models/JuryUser.js";
 import { isPlatformAdmin, requireAdmin } from "../../middleware/auth.js";
 import { sendHackathonJuryInvitation } from "../../services/emailNotification.js";
@@ -55,6 +59,7 @@ router.get("/:hackathonId/problem-statements", async (req, res) => {
     return res.json({
       statements: statements.map((statement) => ({
         ...statement,
+        contactInfo: statement.contactInfo || DEFAULT_PROBLEM_STATEMENT_CONTACT_INFO,
         confirmedTeams: teamsByStatement.get(statement.id) || [],
       })),
       claimLimit: program.juryClaimLimit ?? 20,

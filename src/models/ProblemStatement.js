@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 /** Max team-proposed statements an admin can approve per Hackathon. */
 export const TEAM_PROPOSAL_LIMIT = 5;
+export const DEFAULT_PROBLEM_STATEMENT_CONTACT_INFO = "8639648822";
 
 const problemStatementSchema = new mongoose.Schema(
   {
@@ -65,6 +66,14 @@ const problemStatementSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
+    },
+    organization: { type: String, trim: true, default: "", maxlength: 200 },
+    contactInfo: {
+      type: String,
+      required: true,
+      trim: true,
+      default: DEFAULT_PROBLEM_STATEMENT_CONTACT_INFO,
+      maxlength: 200,
     },
     category: {
       type: String,

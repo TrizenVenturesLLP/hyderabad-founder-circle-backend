@@ -8,7 +8,10 @@ import { JuryUser } from "../models/JuryUser.js";
 import { HackathonJuryInvitation } from "../models/HackathonJuryInvitation.js";
 import { HackathonJuryMembership } from "../models/HackathonJuryMembership.js";
 import { HackathonJuryEvaluation } from "../models/HackathonJuryEvaluation.js";
-import { ProblemStatement } from "../models/ProblemStatement.js";
+import {
+  ProblemStatement,
+  DEFAULT_PROBLEM_STATEMENT_CONTACT_INFO,
+} from "../models/ProblemStatement.js";
 import {
   awaitingSubmission,
   buildHackathonLeaderboard,
@@ -615,6 +618,7 @@ router.get("/hackathons/:hackathonId/problem-statements", async (req, res) => {
       const teamNames = teamNamesById.get(statement.id) || [];
       return {
         ...statement,
+        contactInfo: statement.contactInfo || DEFAULT_PROBLEM_STATEMENT_CONTACT_INFO,
         teamProposal: Boolean(proposedByTeam),
         teamCount: teamNames.length,
         // Team names are hidden only on statements another Jury member owns.
