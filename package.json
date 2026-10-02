@@ -5,10 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch src/index.js",
-    "start": "node src/index.js",
-    "upload:problem-statements": "node src/services/uploadProblemStatementsFromJson.js"
+    "start": "node src/index.js"
   },
-
   "engines": {
     "node": ">=20"
   },
