@@ -515,8 +515,6 @@ const problemStatementsData = [
   }
 ];
 
-import { restoreRecoveredProblemStatements } from "./restoreRecoveredProblemStatements.js";
-
 export async function seedProblemStatements() {
   try {
     // Drop legacy id_1 index if it exists in MongoDB
@@ -534,8 +532,6 @@ export async function seedProblemStatements() {
       );
     }
     console.log(`[seed] Successfully seeded ${problemStatementsData.length} problem statements.`);
-
-    await restoreRecoveredProblemStatements();
   } catch (err) {
     console.error("[seed-problem-statements] Failed:", err instanceof Error ? err.message : err);
   }
