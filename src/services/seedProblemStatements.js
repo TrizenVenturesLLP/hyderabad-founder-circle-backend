@@ -2,30 +2,6 @@ import { ProblemStatement } from "../models/ProblemStatement.js";
 
 const problemStatementsData = [
   {
-    slug: "ps-01-autonomous-product-return-resolution-agent",
-    title: "PS-01 — Autonomous Product Return Resolution Agent",
-    organization: "",
-    department: "",
-    targetDomain: "Agentic AI, Web Development, UI/UX Design",
-    difficulty: "Advanced",
-    industry: "E-commerce / Retail",
-    scope: "Product Returns / Customer Service / Order Management",
-    platformTech: "Agentic AI, LLMs, Web Development, APIs, Workflow Automation",
-    description: "Develop an AI agent that handles product-return requests from initiation through resolution. The system should understand return policies, inspect order and product information, determine eligibility, communicate with customers, coordinate return workflows, and track the request until completion.",
-    keyDeliverables: [
-      "Return-request intake",
-      "Policy-aware eligibility assessment",
-      "Order verification",
-      "Automated customer communication",
-      "Return workflow orchestration",
-      "Exception handling",
-      "Status tracking",
-      "Agent dashboard",
-      "Audit history"
-    ],
-    sortOrder: 0
-  },
-  {
     slug: "securemailscope-ai-assisted-cryptographic-security-posture-assessment",
     title: "SecureMailScope: AI-Assisted Cryptographic Security Posture Assessment for Secure Email Communications",
     organization: "National Technical Research Organisation (NTRO)",
