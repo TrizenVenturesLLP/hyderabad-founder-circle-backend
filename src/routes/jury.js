@@ -28,8 +28,10 @@ import {
   signSubmissionViewToken,
   verifySubmissionViewToken,
 } from "../middleware/auth.js";
+import { sendDirectMail } from "../lib/mailer.js";
 
 const router = Router();
+const WEB_APP_URL = (process.env.WEB_APP_URL || "https://ty.trizenventures.com").replace(/\/$/, "");
 const DEFAULT_HACKATHON_SLUG = "ai-hack-x-mrdu-2026";
 const ALLOWED_DOMAINS = new Set([
   "ui-ux",
@@ -387,6 +389,94 @@ router.post("/auth/login", async (req, res) => {
   } catch (error) {
     console.error("[jury/login]", error);
     return res.status(500).json({ error: "Login failed." });
+  }
+});
+
+router.post("/auth/password/request-link", async (req, res) => {
+  try {
+    const email = normalizedEmail(req.body?.email);
+    if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+      return res.status(400).json({ error: "A valid email address is required." });
+    }
+
+    const user = await JuryUser.findOne({ normalizedEmail: email, status: "active" });
+    if (!user) {
+      return res.json({
+        message: "If an active Jury account exists for this email, a password reset link has been sent.",
+      });
+    }
+
+    const rawToken = crypto.randomBytes(32).toString("base64url");
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    user.passwordResetTokenHash = hashToken(rawToken);
+    user.passwordResetTokenExpiresAt = expiresAt;
+    await user.save();
+
+    const resetUrl = `${WEB_APP_URL}/jury/login#resetToken=${encodeURIComponent(rawToken)}`;
+    const html = `
+      <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#111827;">
+        <h2 style="margin-bottom:16px;">Reset your Jury password</h2>
+        <p style="margin-bottom:16px;">Use the button below to choose a new password for your Jury account.</p>
+        <p style="margin: 0 0 20px;">
+          <a href="${resetUrl}" style="display:inline-block;padding:12px 18px;background:#4f46e5;color:white;text-decoration:none;border-radius:8px;font-weight:bold;">
+            Reset password
+          </a>
+        </p>
+        <p style="font-size:13px;color:#4b5563;">If the button does not work, copy and paste this link into your browser:</p>
+        <p style="word-break:break-all;font-size:13px;color:#111827;">${resetUrl}</p>
+        <p style="margin-top:18px;font-size:12px;color:#6b7280;">This link expires in 10 minutes.</p>
+      </div>
+    `;
+
+    try {
+      await sendDirectMail({
+        to: user.email,
+        subject: "Reset your Jury password",
+        html,
+        text: `Reset your Jury password: ${resetUrl}`,
+        senderName: "Trizen Community",
+      });
+    } catch (mailError) {
+      console.warn("[jury/password/request-link] Mail delivery failed:", mailError);
+    }
+
+    return res.json({
+      message: "If an active Jury account exists for this email, a password reset link has been sent.",
+    });
+  } catch (error) {
+    console.error("[jury/password/request-link]", error);
+    return res.status(500).json({ error: "Could not send the password reset link." });
+  }
+});
+
+router.post("/auth/password/reset", async (req, res) => {
+  try {
+    const token = String(req.body?.token || "");
+    const password = String(req.body?.password || "");
+    if (!token || password.length < 8 || password.length > 128) {
+      return res.status(400).json({
+        error: "A valid reset token and a password between 8 and 128 characters are required.",
+      });
+    }
+
+    const user = await JuryUser.findOne({
+      passwordResetTokenHash: hashToken(token),
+      passwordResetTokenExpiresAt: { $gt: new Date() },
+    });
+    if (!user) {
+      return res.status(401).json({ error: "This password reset link is invalid or has expired." });
+    }
+
+    user.passwordHash = await bcrypt.hash(password, 12);
+    user.passwordResetTokenHash = null;
+    user.passwordResetTokenExpiresAt = null;
+    await user.save();
+
+    return res.json({ message: "Your password has been reset successfully. Please sign in." });
+  } catch (error) {
+    console.error("[jury/password/reset]", error);
+    return res.status(500).json({ error: "Unable to reset the password." });
   }
 });
 

@@ -11,6 +11,8 @@ const juryUserSchema = new mongoose.Schema(
     },
     name: { type: String, required: true, trim: true, maxlength: 120 },
     passwordHash: { type: String, required: true },
+    passwordResetTokenHash: { type: String, default: null },
+    passwordResetTokenExpiresAt: { type: Date, default: null },
     status: { type: String, enum: ["active", "disabled"], default: "active" },
     emailVerified: { type: Boolean, default: false },
   },

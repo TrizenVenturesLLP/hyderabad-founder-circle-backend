@@ -50,9 +50,52 @@ export function teamRoundOutcome(program, team, { publishedOnly = false } = {}) 
     (item) => item.round < MAX_EVALUATION_ROUNDS && (!publishedOnly || item.publishedAt),
   );
   if (!decided) return null;
-  return latest > decided.round
-    ? { round: decided.round, status: "qualified", nextRound: decided.round + 1 }
-    : { round: decided.round, status: "disqualified", nextRound: null };
+  if (Array.isArray(decided.evaluatedTeamIds)) {
+    if (!team?.problem_statement_id) return null;
+    const teamId = String(team._id);
+    if (!decided.evaluatedTeamIds.some((id) => String(id) === teamId)) {
+      return { round: decided.round, status: "pending", nextRound: null };
+    }
+    const qualified = (decided.qualifiedTeamIds || []).some((id) => String(id) === teamId);
+    return qualified
+      ? { round: decided.round, status: "qualified", nextRound: decided.round + 1 }
+      : { round: decided.round, status: "disqualified", nextRound: null };
+  }
+  if (latest > decided.round) {
+    return { round: decided.round, status: "qualified", nextRound: decided.round + 1 };
+  }
+  return team?.problem_statement_id
+    ? { round: decided.round, status: "pending", nextRound: null }
+    : null;
+}
+
+export function evaluateRoundTeamsForCutoff(program, round, items, cutoff) {
+  const scoredEntries = (items || []).filter(
+    (entry) => entry && entry.averageScore !== null && entry.averageScore !== undefined,
+  );
+  const evaluatedTeamIds = scoredEntries.map((entry) => String(entry.teamId));
+  const qualifiedTeamIds = scoredEntries
+    .filter((entry) => Number(entry.averageScore) >= Number(cutoff))
+    .map((entry) => String(entry.teamId));
+  const qualifiedCount = qualifiedTeamIds.length;
+  const disqualifiedCount = evaluatedTeamIds.length - qualifiedCount;
+
+  const existingRoundResult = (program?.roundResults || []).find((item) => item.round === round);
+  if (existingRoundResult) {
+    existingRoundResult.evaluatedTeamIds = evaluatedTeamIds;
+    existingRoundResult.qualifiedTeamIds = qualifiedTeamIds;
+    existingRoundResult.qualifiedCount = qualifiedCount;
+    existingRoundResult.disqualifiedCount = disqualifiedCount;
+  }
+
+  return {
+    round,
+    cutoff: Number(cutoff),
+    evaluatedTeamIds,
+    qualifiedTeamIds,
+    qualifiedCount,
+    disqualifiedCount,
+  };
 }
 
 /** Active team count and the highest round any team has reached. */
@@ -130,7 +173,10 @@ export async function buildHackathonLeaderboard(programId, round = 1) {
   ]);
 
   const maxRound = Math.max(1, ...teams.map(teamRound));
-  const decision = round < MAX_EVALUATION_ROUNDS ? roundResultFor(program, round) : null;
+  const decision =
+    round < MAX_EVALUATION_ROUNDS
+      ? (program?.roundResults || []).find((item) => item.round === round) || null
+      : null;
   const roundTeams = teams.filter((team) => teamRound(team) >= round);
 
   const statementIds = [
@@ -160,6 +206,13 @@ export async function buildHackathonLeaderboard(programId, round = 1) {
       ownerId ? (scoreByKey.get(`${teamId}:${value}:${ownerId}`) ?? null) : null;
     const score = ownerScore(round);
     const submittedEvaluations = score === null ? 0 : 1;
+    const manuallyTracked = Array.isArray(decision?.evaluatedTeamIds);
+    const evaluatedByAdmin = manuallyTracked
+      ? decision.evaluatedTeamIds.some((id) => String(id) === teamId)
+      : teamRound(team) > round;
+    const qualifiedByAdmin = manuallyTracked
+      ? (decision.qualifiedTeamIds || []).some((id) => String(id) === teamId)
+      : teamRound(team) > round;
     return {
       teamId,
       teamName: team.team_name,
@@ -176,7 +229,15 @@ export async function buildHackathonLeaderboard(programId, round = 1) {
       lowestScore: score,
       teamRound: teamRound(team),
       advanced: teamRound(team) > round,
-      qualification: decision ? (teamRound(team) > round ? "qualified" : "disqualified") : null,
+      qualification: decision
+        ? !statement
+          ? null
+          : !evaluatedByAdmin
+            ? "pending"
+            : qualifiedByAdmin
+              ? "qualified"
+              : "disqualified"
+        : null,
       roundScores: Array.from({ length: teamRound(team) }, (_, index) => {
         const value = ownerScore(index + 1);
         return {
@@ -214,11 +275,18 @@ export async function buildHackathonLeaderboard(programId, round = 1) {
   const scoringComplete =
     entries.length > 0 &&
     entries.every((entry) => entry.totalJuryMembers > 0 && entry.submittedEvaluations > 0);
+  const result = decision ? roundResultFor(program, round) : null;
+  if (result) {
+    result.qualifiedCount = items.filter((entry) => entry.qualification === "qualified").length;
+    result.disqualifiedCount = items.filter(
+      (entry) => entry.qualification === "disqualified",
+    ).length;
+  }
 
   return {
     round,
     maxRound,
-    result: decision,
+    result,
     scoringComplete,
     requiredEvaluations,
     totalJuryMembers,

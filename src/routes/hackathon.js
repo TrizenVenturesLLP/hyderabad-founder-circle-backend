@@ -402,10 +402,29 @@ hackathonRouter.post("/user", async (req, res) => {
     const program = user.hackathonId
       ? await HackathonProgram.findById(user.hackathonId).select("roundResults").lean()
       : null;
+    let roundResult = teamRoundOutcome(program, user, { publishedOnly: true });
+    if (roundResult?.status === "disqualified") {
+      const cutoff = program?.roundResults?.find(
+        (item) => item.round === roundResult.round,
+      )?.cutoff;
+      const evaluation = await HackathonJuryEvaluation.findOne({
+        hackathonId: program?._id,
+        teamId: user._id,
+        round: roundResult.round,
+        status: "submitted",
+      })
+        .select("totalScore")
+        .lean();
+      if (typeof cutoff !== "number" || !evaluation || evaluation.totalScore >= cutoff) {
+        roundResult = user.problem_statement_id
+          ? { round: roundResult.round, status: "pending", nextRound: null }
+          : null;
+      }
+    }
     return res.status(200).json({
       message: "User found",
       user,
-      roundResult: teamRoundOutcome(program, user, { publishedOnly: true }),
+      roundResult,
       ...(await teamProposalState(user)),
     });
   } catch (error) {

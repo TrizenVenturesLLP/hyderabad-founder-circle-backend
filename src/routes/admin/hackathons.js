@@ -781,7 +781,7 @@ async function nextRoundStarted(program, round) {
   );
 }
 
-/** Applies a score cutoff: teams averaging at or above it qualify for the next round. */
+/** Sets the qualifying score cutoff; teams are evaluated individually afterward. */
 router.post("/:hackathonId/rounds/:round/cutoff", async (req, res) => {
   try {
     const context = await loadRoundForResult(req, res);
@@ -801,38 +801,19 @@ router.post("/:hackathonId/rounds/:round/cutoff", async (req, res) => {
         error: `Round ${round + 1} scoring has already started, so the Round ${round} cutoff can't change.`,
       });
     }
-    const board = await buildHackathonLeaderboard(program._id, round);
-    if (!board.scoringComplete) {
-      return res.status(409).json({
-        error: `Every Jury member must submit a score for every team in Round ${round} first.`,
-      });
-    }
-    const passes = (entry) => entry.averageScore !== null && entry.averageScore >= cutoff;
-    const qualified = board.items.filter(passes).map((entry) => entry.teamId);
-    const disqualified = board.items
-      .filter((entry) => !passes(entry))
-      .map((entry) => entry.teamId);
-    await Promise.all([
-      qualified.length
-        ? Hackathon.updateMany(
-            { _id: { $in: qualified }, hackathonId: program._id },
-            { $set: { round: round + 1 } },
-          )
-        : null,
-      disqualified.length
-        ? Hackathon.updateMany(
-            { _id: { $in: disqualified }, hackathonId: program._id },
-            { $set: { round } },
-          )
-        : null,
-    ]);
+    await Hackathon.updateMany(
+      { hackathonId: program._id, round: round + 1 },
+      { $set: { round } },
+    );
     program.roundResults = [
       ...program.roundResults.filter((item) => item.round !== round),
       {
         round,
         cutoff,
-        qualifiedCount: qualified.length,
-        disqualifiedCount: disqualified.length,
+        qualifiedCount: 0,
+        disqualifiedCount: 0,
+        evaluatedTeamIds: [],
+        qualifiedTeamIds: [],
         decidedAt: new Date(),
         publishedAt: null,
       },
@@ -846,6 +827,75 @@ router.post("/:hackathonId/rounds/:round/cutoff", async (req, res) => {
 });
 
 /** Clears a round's cutoff and moves its teams back to that round. */
+router.post("/:hackathonId/rounds/:round/teams/:teamId/evaluate", async (req, res) => {
+  try {
+    const context = await loadRoundForResult(req, res);
+    if (!context) return;
+    const { program, round, result } = context;
+    if (!result) {
+      return res.status(409).json({ error: `Set the Round ${round} cutoff before evaluating teams.` });
+    }
+    if (result.publishedAt) {
+      return res.status(409).json({ error: `Unpublish Round ${round} results before evaluating teams.` });
+    }
+    if (!mongoose.isValidObjectId(req.params.teamId)) {
+      return res.status(400).json({ error: "Invalid team." });
+    }
+    const team = await Hackathon.findOne({
+      _id: req.params.teamId,
+      hackathonId: program._id,
+      status: "active",
+    })
+      .select("team_name lead_name problem_statement_id round")
+      .lean();
+    if (!team) return res.status(404).json({ error: "Team not found." });
+    if (!team.problem_statement_id) {
+      return res.status(409).json({ error: "The team must select a problem statement first." });
+    }
+
+    const board = await buildHackathonLeaderboard(program._id, round);
+    const entry = board.items.find((item) => item.teamId === String(team._id));
+    if (!entry || entry.averageScore === null) {
+      return res.status(409).json({ error: "The Jury must score this team before evaluation." });
+    }
+
+    const roundResult = program.roundResults.find((item) => item.round === round);
+    if (!Array.isArray(roundResult.evaluatedTeamIds)) {
+      const legacyEvaluated = board.items.filter(
+        (item) => item.qualification === "qualified",
+      );
+      roundResult.evaluatedTeamIds = legacyEvaluated.map((item) => item.teamId);
+      roundResult.qualifiedTeamIds = legacyEvaluated
+        .filter((item) => item.averageScore >= roundResult.cutoff)
+        .map((item) => item.teamId);
+    }
+    if (roundResult.evaluatedTeamIds.some((id) => String(id) === String(team._id))) {
+      return res.status(409).json({ error: "This team has already been evaluated." });
+    }
+
+    roundResult.evaluatedTeamIds.push(team._id);
+    const qualified = entry.averageScore >= roundResult.cutoff;
+    if (qualified) roundResult.qualifiedTeamIds.push(team._id);
+    roundResult.qualifiedCount = roundResult.qualifiedTeamIds.length;
+    roundResult.disqualifiedCount =
+      roundResult.evaluatedTeamIds.length - roundResult.qualifiedCount;
+    await Promise.all([
+      program.save(),
+      Hackathon.updateOne(
+        { _id: team._id, hackathonId: program._id },
+        { $set: { round: qualified ? round + 1 : round } },
+      ),
+    ]);
+    return res.json({
+      qualification: qualified ? "qualified" : "disqualified",
+      result: roundResultFor(program, round),
+    });
+  } catch (error) {
+    console.error("[admin/hackathons team evaluation]", error);
+    return res.status(500).json({ error: "Could not evaluate the team." });
+  }
+});
+
 router.delete("/:hackathonId/rounds/:round/cutoff", async (req, res) => {
   try {
     const context = await loadRoundForResult(req, res);

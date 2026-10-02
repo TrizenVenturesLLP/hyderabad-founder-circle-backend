@@ -18,6 +18,14 @@ const roundResultSchema = new mongoose.Schema(
     cutoff: { type: Number, required: true, min: 0, max: 100 },
     qualifiedCount: { type: Number, default: 0, min: 0 },
     disqualifiedCount: { type: Number, default: 0, min: 0 },
+    evaluatedTeamIds: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Hackathon" }],
+      default: undefined,
+    },
+    qualifiedTeamIds: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Hackathon" }],
+      default: undefined,
+    },
     decidedAt: { type: Date, default: null },
     publishedAt: { type: Date, default: null },
   },
