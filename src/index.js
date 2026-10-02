@@ -12,14 +12,11 @@ import adminEventsRouter from "./routes/admin/events.js";
 import adminEmailsRouter from "./routes/admin/emails.js";
 import adminOrgApplicationsRouter from "./routes/admin/orgApplications.js";
 import orgApplicationsRouter from "./routes/orgApplications.js";
-import problemStatementsRouter from "./routes/problemStatements.js";
-import adminProblemStatementsRouter from "./routes/admin/problemStatements.js";
 import {
   analyticsPublicRouter,
   analyticsAdminRouter,
 } from "./routes/analytics.js";
 import { seedAdminAndEvents } from "./services/seed.js";
-import { seedProblemStatements } from "./services/seedProblemStatements.js";
 import { ensureRsvpIndexes } from "./services/ensureRsvpIndexes.js";
 import { Event } from "./models/Event.js";
 
@@ -170,8 +167,6 @@ app.use("/api/admin/emails", adminEmailsRouter);
 app.use("/api/admin/org-applications", adminOrgApplicationsRouter);
 app.use("/api/admin/analytics", analyticsAdminRouter);
 app.use("/api/org-applications", orgApplicationsRouter);
-app.use("/api/problem-statements", problemStatementsRouter);
-app.use("/api/admin/problem-statements", adminProblemStatementsRouter);
 
 async function connectMongoWithRetry() {
   if (!MONGODB_URI) {
@@ -199,7 +194,6 @@ async function connectMongoWithRetry() {
       }
       try {
         await seedAdminAndEvents();
-        await seedProblemStatements();
       } catch (seedErr) {
         console.error(
           "[seed] Failed:",
