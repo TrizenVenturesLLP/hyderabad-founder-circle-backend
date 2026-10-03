@@ -845,7 +845,7 @@ hackathonRouter.post("/submit", upload.none(), async (req, res) => {
   try {
     const deadlineDate = process.env.SUBMISSION_DEADLINE
       ? new Date(process.env.SUBMISSION_DEADLINE)
-      : new Date("2026-10-04T00:00:00+05:30");
+      : new Date("2026-10-04T00:40:00+05:30");
     const SUBMISSION_DEADLINE_MS = deadlineDate.getTime();
 
     if (Date.now() > SUBMISSION_DEADLINE_MS) {
