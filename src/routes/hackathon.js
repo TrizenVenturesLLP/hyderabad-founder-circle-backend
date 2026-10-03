@@ -845,11 +845,12 @@ hackathonRouter.post("/submit", upload.none(), async (req, res) => {
   try {
     const deadlineDate = process.env.SUBMISSION_DEADLINE
       ? new Date(process.env.SUBMISSION_DEADLINE)
-      : new Date("2026-10-03T21:28:00+05:30");
+      : new Date("2026-10-03T23:00:00+05:30");
     const SUBMISSION_DEADLINE_MS = deadlineDate.getTime();
 
     if (Date.now() > SUBMISSION_DEADLINE_MS) {
       const formattedDate = deadlineDate.toLocaleString("en-US", {
+        timeZone: "Asia/Kolkata",
         month: "short",
         day: "numeric",
         year: "numeric",
