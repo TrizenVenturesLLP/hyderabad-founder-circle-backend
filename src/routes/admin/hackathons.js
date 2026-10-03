@@ -129,13 +129,6 @@ router.patch("/:hackathonId/problem-statements/:statementId/approval", async (re
       return res.status(400).json({ error: "A reason is required when rejecting a statement." });
     }
     const statementId = String(req.params.statementId || "").trim().toUpperCase();
-    const countApprovedProposals = () =>
-      ProblemStatement.countDocuments({
-        hackathonId: program._id,
-        proposedByTeam: { $ne: null },
-        status: "active",
-      });
-    const slotsFullError = `All ${TEAM_PROPOSAL_LIMIT} team-proposed statements are already approved. Reject this one, or delete an approved team proposal first.`;
 
     const pending = await ProblemStatement.findOne({
       hackathonId: program._id,
@@ -148,9 +141,6 @@ router.patch("/:hackathonId/problem-statements/:statementId/approval", async (re
       return res.status(404).json({ error: "Pending Problem Statement not found." });
     }
     if (action === "approve" && pending.proposedByTeam) {
-      if ((await countApprovedProposals()) >= TEAM_PROPOSAL_LIMIT) {
-        return res.status(409).json({ error: slotsFullError });
-      }
       const team = await Hackathon.findOne({
         _id: pending.proposedByTeam,
         hackathonId: program._id,
@@ -197,10 +187,6 @@ router.patch("/:hackathonId/problem-statements/:statementId/approval", async (re
           { _id: statement._id },
           { $set: { status: "pending_approval", reviewedBy: null, reviewedAt: null } },
         );
-      if ((await countApprovedProposals()) > TEAM_PROPOSAL_LIMIT) {
-        await revert();
-        return res.status(409).json({ error: slotsFullError });
-      }
       // Approving a team's own idea confirms it as that team's statement.
       const confirmed = await Hackathon.updateOne(
         {
