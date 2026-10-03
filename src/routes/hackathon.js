@@ -841,25 +841,46 @@ hackathonRouter.patch("/users/:id/evaluation", requireAdmin, requireCurrentHacka
   }
 });
 
-hackathonRouter.post("/submit", upload.single("ppt"), async (req, res) => {
+hackathonRouter.post("/submit", upload.none(), async (req, res) => {
   try {
-    const { email, phone, github_repo, description, video_url } = req.body;
+    const deadlineDate = process.env.SUBMISSION_DEADLINE
+      ? new Date(process.env.SUBMISSION_DEADLINE)
+      : new Date("2026-10-03T21:28:00+05:30");
+    const SUBMISSION_DEADLINE_MS = deadlineDate.getTime();
+
+    if (Date.now() > SUBMISSION_DEADLINE_MS) {
+      const formattedDate = deadlineDate.toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
+      return res.status(403).json({
+        message: `We are unable to process your upload because the project submission deadline (${formattedDate}) has ended. New submissions are no longer accepted.`,
+      });
+    }
+
+    const { email, phone, github_repo, description, video_url, room_number, other_links, ppt_url, ppt } = req.body;
+    const finalPptUrl = (ppt_url || ppt || "").trim();
 
     if (
       !email ||
       !phone ||
       !github_repo?.trim() ||
       !description?.trim() ||
-      !video_url?.trim()
+      !video_url?.trim() ||
+      !room_number?.trim()
     ) {
       return res.status(400).json({
-        message: "Please provide all submission details.",
+        message: "Please provide all submission details including Room Number.",
       });
     }
 
-    if (!req.file) {
+    if (!finalPptUrl) {
       return res.status(400).json({
-        message: "Please upload your PPT/PDF file.",
+        message: "Please provide your presentation (PPT/PDF) link.",
       });
     }
 
@@ -883,41 +904,6 @@ hackathonRouter.post("/submit", upload.single("ppt"), async (req, res) => {
       });
     }
 
-    const db = mongoose.connection.db;
-
-    if (!db) {
-      return res.status(500).json({
-        message: "Database connection is not ready.",
-      });
-    }
-
-    const bucket = new mongoose.mongo.GridFSBucket(db, {
-      bucketName: "hackathon_ppts",
-    });
-
-    const fileId = new mongoose.Types.ObjectId();
-
-    const uploadStream = bucket.openUploadStreamWithId(
-      fileId,
-      req.file.originalname,
-      {
-        contentType: req.file.mimetype,
-        metadata: {
-          email,
-          phone,
-        },
-      },
-    );
-
-    uploadStream.end(req.file.buffer);
-
-    await new Promise((resolve, reject) => {
-      uploadStream.on("finish", resolve);
-      uploadStream.on("error", reject);
-    });
-
-    const pptUrl = `/api/hackathon/ppt/${fileId.toString()}`;
-
     const program = await HackathonProgram.findOne({ slug: CURRENT_HACKATHON_SLUG }).select("_id");
     if (!program) return res.status(503).json({ message: "Hackathon is not configured." });
     const user = await Hackathon.findOneAndUpdate(
@@ -927,8 +913,10 @@ hackathonRouter.post("/submit", upload.single("ppt"), async (req, res) => {
           submission: {
             github_repo: github_repo.trim(),
             description: description.trim(),
-            ppt_url: pptUrl,
+            ppt_url: finalPptUrl,
             video_url: video_url.trim(),
+            room_number: room_number.trim(),
+            other_links: other_links ? String(other_links).trim() : null,
             submitted_at: new Date(),
           },
         },
@@ -937,8 +925,6 @@ hackathonRouter.post("/submit", upload.single("ppt"), async (req, res) => {
     );
 
     if (!user) {
-      await bucket.delete(fileId);
-
       return res.status(404).json({
         message: "Team not found",
       });

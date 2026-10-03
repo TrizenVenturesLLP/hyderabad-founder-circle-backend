@@ -238,8 +238,11 @@ function teamSummary(team) {
       description: team.submission?.description || "",
       githubRepo: team.submission?.github_repo || "",
       videoUrl: team.submission?.video_url || "",
+      roomNumber: team.submission?.room_number || "",
+      otherLinks: team.submission?.other_links || "",
       submittedAt: team.submission?.submitted_at || null,
       hasFile: Boolean(team.submission?.ppt_url),
+      pptUrl: team.submission?.ppt_url || "",
     },
   };
 }

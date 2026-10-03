@@ -967,4 +967,67 @@ router.post(
   },
 );
 
+router.put("/:hackathonId/evaluations/:evaluationId", async (req, res) => {
+  try {
+    const program = await loadAuthorizedProgram(req, res);
+    if (!program) return;
+
+    const { criteriaScores, comments, status, teamId, juryMemberId, round } = req.body;
+    const evaluationId = req.params.evaluationId;
+
+    let evaluation;
+    if (mongoose.Types.ObjectId.isValid(evaluationId)) {
+      evaluation = await HackathonJuryEvaluation.findOne({
+        _id: evaluationId,
+        hackathonId: program._id,
+      });
+    }
+
+    if (!evaluation && teamId && juryMemberId) {
+      const parsedRound = parseRound(round || 1, 1);
+      evaluation = new HackathonJuryEvaluation({
+        hackathonId: program._id,
+        teamId,
+        juryMemberId,
+        round: parsedRound,
+        rubricVersion: program.rubricVersion || 1,
+      });
+    }
+
+    if (!evaluation) {
+      return res.status(404).json({ error: "Evaluation record not found." });
+    }
+
+    if (Array.isArray(criteriaScores)) {
+      evaluation.criteriaScores = criteriaScores.map((item) => ({
+        criterionId: String(item.criterionId || "").trim(),
+        score: Math.max(0, Number(item.score) || 0),
+      }));
+    }
+
+    const totalScore = evaluation.criteriaScores.reduce(
+      (sum, item) => sum + (Number(item.score) || 0),
+      0,
+    );
+    evaluation.totalScore = Math.min(100, Math.max(0, totalScore));
+
+    if (typeof comments === "string") {
+      evaluation.comments = comments.trim();
+    }
+
+    evaluation.status = status === "draft" ? "draft" : "submitted";
+    if (evaluation.status === "submitted" && !evaluation.submittedAt) {
+      evaluation.submittedAt = new Date();
+    }
+    evaluation.reopenedAt = null;
+
+    await evaluation.save();
+
+    return res.json({ message: "Evaluation updated successfully", evaluation });
+  } catch (error) {
+    console.error("[admin/hackathons evaluation edit]", error);
+    return res.status(500).json({ error: "Could not update evaluation." });
+  }
+});
+
 export default router;

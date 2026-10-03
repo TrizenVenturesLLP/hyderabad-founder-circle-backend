@@ -63,6 +63,8 @@ const hackathonSchema = new mongoose.Schema(
       description: { type: String, default: null, trim: true },
       ppt_url: { type: String, default: null, trim: true },
       video_url: { type: String, default: null, trim: true },
+      room_number: { type: String, default: null, trim: true },
+      other_links: { type: String, default: null, trim: true },
       submitted_at: { type: Date, default: null },
     },
 
