@@ -7,8 +7,23 @@ import { JuryUser } from "../models/JuryUser.js";
 
 const roundScore = (value) => Math.round(value * 10) / 10;
 
-/** Round 1 and 2 have qualifying cutoffs; Round 3 is the final round. */
-export const MAX_EVALUATION_ROUNDS = 3;
+/** Round 1 has a qualifying cutoff; Round 2 is the final round. */
+export const MAX_EVALUATION_ROUNDS = 2;
+
+export const FINAL_ROUND_QUALIFIED_TEAM_IDS = new Set([
+  '6abfe4852f29b056bf2ff9d3',
+  '6abfe5e72f29b056bf300dec',
+  '6abfe3ab2f29b056bf2ff468',
+  '6abfe6222f29b056bf3013ca',
+  '6abfe62a2f29b056bf3014a1',
+  '6abfea932f29b056bf3081d8',
+  '6ac07b422f29b056bf31a7f3',
+  '6ac00d902f29b056bf3164e2',
+  '6ac0c28a2f29b056bf32550a',
+  '6abffaf62f29b056bf313d12',
+  '6ac061212f29b056bf318e47',
+  '6ac051302f29b056bf317776',
+]);
 
 export function teamRound(team) {
   const round = Number(team?.round);
@@ -48,8 +63,14 @@ export function roundResultFor(program, round) {
 export function teamRoundOutcome(program, team, { publishedOnly = false } = {}) {
   const teamId = String(team?._id);
   const results = (program?.roundResults || [])
-    .filter((item) => item.round < MAX_EVALUATION_ROUNDS && (!publishedOnly || item.publishedAt))
+    .filter((item) => item.round <= MAX_EVALUATION_ROUNDS && (!publishedOnly || item.publishedAt))
     .sort((a, b) => b.round - a.round);
+
+  if (!results.length && teamRound(team) === MAX_EVALUATION_ROUNDS) {
+    return FINAL_ROUND_QUALIFIED_TEAM_IDS.has(teamId)
+      ? { round: MAX_EVALUATION_ROUNDS, status: "qualified", nextRound: null }
+      : { round: MAX_EVALUATION_ROUNDS, status: "disqualified", nextRound: null };
+  }
 
   const decided =
     results.find((item) =>
@@ -65,12 +86,14 @@ export function teamRoundOutcome(program, team, { publishedOnly = false } = {}) 
       return { round: decided.round, status: "pending", nextRound: null };
     }
     const qualified = (decided.qualifiedTeamIds || []).some((id) => String(id) === teamId);
+    const nextRound = decided.round < MAX_EVALUATION_ROUNDS ? decided.round + 1 : null;
     return qualified
-      ? { round: decided.round, status: "qualified", nextRound: decided.round + 1 }
+      ? { round: decided.round, status: "qualified", nextRound }
       : { round: decided.round, status: "disqualified", nextRound: null };
   }
   if (teamRound(team) > decided.round) {
-    return { round: decided.round, status: "qualified", nextRound: decided.round + 1 };
+    const nextRound = decided.round < MAX_EVALUATION_ROUNDS ? decided.round + 1 : null;
+    return { round: decided.round, status: "qualified", nextRound };
   }
   return team?.problem_statement_id
     ? { round: decided.round, status: "pending", nextRound: null }
@@ -181,11 +204,26 @@ export async function buildHackathonLeaderboard(programId, round = 1) {
   ]);
 
   const maxRound = Math.max(1, ...teams.map(teamRound));
+  const roundTeams = teams.filter((team) => teamRound(team) >= round);
+  const fallbackFinalRoundDecision =
+    round === MAX_EVALUATION_ROUNDS && roundTeams.length
+      ? {
+          round,
+          cutoff: 0,
+          evaluatedTeamIds: roundTeams.map((team) => String(team._id)),
+          qualifiedTeamIds: roundTeams
+            .filter((team) => FINAL_ROUND_QUALIFIED_TEAM_IDS.has(String(team._id)))
+            .map((team) => String(team._id)),
+          qualifiedCount: 0,
+          disqualifiedCount: 0,
+          decidedAt: null,
+          publishedAt: null,
+        }
+      : null;
   const decision =
     round < MAX_EVALUATION_ROUNDS
       ? (program?.roundResults || []).find((item) => item.round === round) || null
-      : null;
-  const roundTeams = teams.filter((team) => teamRound(team) >= round);
+      : fallbackFinalRoundDecision;
 
   const statementIds = [
     ...new Set(roundTeams.map((team) => team.problem_statement_id).filter(Boolean)),
@@ -283,7 +321,18 @@ export async function buildHackathonLeaderboard(programId, round = 1) {
   const scoringComplete =
     entries.length > 0 &&
     entries.every((entry) => entry.totalJuryMembers > 0 && entry.submittedEvaluations > 0);
-  const result = decision ? roundResultFor(program, round) : null;
+  let result = decision ? roundResultFor(program, round) : null;
+  if (!result && decision) {
+    result = {
+      round,
+      cutoff: decision.cutoff ?? 0,
+      qualifiedCount: decision.qualifiedTeamIds?.length || 0,
+      disqualifiedCount:
+        (decision.evaluatedTeamIds || []).length - (decision.qualifiedTeamIds || []).length,
+      decidedAt: decision.decidedAt || null,
+      publishedAt: decision.publishedAt || null,
+    };
+  }
   if (result) {
     result.qualifiedCount = items.filter((entry) => entry.qualification === "qualified").length;
     result.disqualifiedCount = items.filter(

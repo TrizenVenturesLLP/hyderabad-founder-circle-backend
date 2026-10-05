@@ -107,11 +107,11 @@ await program.save();
 console.log('Updated HackathonProgram roundResults successfully.');
 
 // 4. Update Hackathon team records:
-// For 12 winners: set round: 3 and set their domainId
+// For 12 winners: Round 2 is the final round, so keep them at round 2 and set their domainId.
 for (const winner of winnerDefs) {
   const res = await Hackathon.updateOne(
     { _id: winner.id, hackathonId: program._id },
-    { $set: { round: 3, domainId: winner.domainId } }
+    { $set: { round: 2, domainId: winner.domainId } }
   );
   console.log(`Updated winner ${winner.name} (${winner.domainId}): modified = ${res.modifiedCount}`);
 }
@@ -152,10 +152,10 @@ qualifiedInBoard.forEach((item, i) => {
   console.log(` ${i + 1}. [${item.domainId}] ${item.teamName} (Round: ${item.teamRound}, Advanced: ${item.advanced})`);
 });
 
-console.log('\n--- VERIFICATION: Round 3 Leaderboard ---');
-const boardR3 = await buildHackathonLeaderboard(program._id, 3);
-console.log(`R3 Finalist teams count: ${boardR3.teamCount}`);
-boardR3.items.forEach((item, i) => {
+console.log('\n--- VERIFICATION: Final Round Leaderboard ---');
+const boardFinal = await buildHackathonLeaderboard(program._id, 2);
+console.log(`Final round teams count: ${boardFinal.teamCount}`);
+boardFinal.items.forEach((item, i) => {
   console.log(` ${i + 1}. [${item.domainId}] ${item.teamName} (Round: ${item.teamRound})`);
 });
 
