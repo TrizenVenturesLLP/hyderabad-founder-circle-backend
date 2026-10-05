@@ -45,9 +45,9 @@ function getTransporter() {
 }
 
 /**
- * @param {{ to: string, subject: string, html: string, text: string, senderName?: string, attachments?: any[] }} opts
+ * @param {{ to: string, subject: string, html: string, text: string, senderName?: string, replyTo?: string, attachments?: any[] }} opts
  */
-export async function sendDirectMail({ to, subject, html, text, senderName, attachments }) {
+export async function sendDirectMail({ to, subject, html, text, senderName, replyTo, attachments }) {
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
     throw new Error("SMTP credentials are not configured.");
   }
@@ -60,7 +60,7 @@ export async function sendDirectMail({ to, subject, html, text, senderName, atta
         "Trizen Community",
       address: process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_USER,
     },
-    replyTo: process.env.EMAIL_REPLY_TO || process.env.SMTP_USER,
+    replyTo: replyTo || process.env.EMAIL_REPLY_TO || process.env.SMTP_USER,
     to,
     subject,
     html,
@@ -75,7 +75,7 @@ export async function sendDirectMail({ to, subject, html, text, senderName, atta
             path: a.path,
           }))
       : undefined,
-    headers: { "X-Mailer": "HFN RSVP Backend" },
+    headers: { "X-Mailer": "Trizen Community Backend" },
   });
 
   return { success: true, messageId: info.messageId || "" };

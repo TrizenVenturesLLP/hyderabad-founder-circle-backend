@@ -1,0 +1,74 @@
+{
+  "toRevoke": [
+    {
+      "_id": "6abe6f8b1de0d6770f3172fb",
+      "round": 2,
+      "teamId": "6abe06bd41b1815ba89b670f",
+      "juryMemberId": "6abdd92a9cdf08392bb6236b",
+      "hackathonId": "6abdd63d1de0d6770f316f1b",
+      "__v": 0,
+      "comments": "",
+      "createdAt": "2026-10-01T14:34:51.112Z",
+      "criteriaScores": [
+        {
+          "criterionId": "problem-identification",
+          "score": 13
+        },
+        {
+          "criterionId": "customer-understanding",
+          "score": 10
+        },
+        {
+          "criterionId": "solution-effectiveness",
+          "score": 12
+        },
+        {
+          "criterionId": "innovation-differentiation",
+          "score": 9
+        },
+        {
+          "criterionId": "market-potential",
+          "score": 10
+        },
+        {
+          "criterionId": "validation-research",
+          "score": 13
+        },
+        {
+          "criterionId": "business-model",
+          "score": 9
+        },
+        {
+          "criterionId": "prototype-implementation",
+          "score": 9
+        },
+        {
+          "criterionId": "presentation-qa",
+          "score": 4
+        }
+      ],
+      "reopenedAt": null,
+      "reopenedBy": null,
+      "rubricVersion": 1,
+      "status": "submitted",
+      "submittedAt": "2026-10-01T14:34:51.112Z",
+      "totalScore": 89,
+      "updatedAt": "2026-10-01T14:34:51.112Z"
+    }
+  ],
+  "programs": [
+    {
+      "_id": "6abdd63d1de0d6770f316f1b",
+      "roundResults": [
+        {
+          "round": 1,
+          "cutoff": 10,
+          "qualifiedCount": 1,
+          "disqualifiedCount": 0,
+          "decidedAt": "2026-10-01T14:32:18.214Z",
+          "publishedAt": null
+        }
+      ]
+    }
+  ]
+}
