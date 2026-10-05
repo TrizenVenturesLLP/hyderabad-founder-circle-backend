@@ -18,7 +18,6 @@ import {
   claimedStatementIds,
   juryWorkload,
   parseRound,
-  syncTeamCutoffQualification,
   teamRound,
   teamRoundOutcome,
   teamRoundTotals,
@@ -239,11 +238,8 @@ function teamSummary(team) {
       description: team.submission?.description || "",
       githubRepo: team.submission?.github_repo || "",
       videoUrl: team.submission?.video_url || "",
-      roomNumber: team.submission?.room_number || "",
-      otherLinks: team.submission?.other_links || "",
       submittedAt: team.submission?.submitted_at || null,
       hasFile: Boolean(team.submission?.ppt_url),
-      pptUrl: team.submission?.ppt_url || "",
     },
   };
 }
@@ -954,35 +950,27 @@ router.get("/hackathons/:hackathonId/teams", async (req, res) => {
     const program = await loadProgramAndMembership(req, res);
     if (!program) return;
     const statementIds = await claimedStatementIds(program._id, req.juryUser.id);
-    const teams = statementIds.length
-      ? await Hackathon.find({
-          hackathonId: program._id,
-          status: "active",
-          problem_statement_id: { $in: statementIds },
-        })
-          .sort({ createdAt: 1 })
-          .lean()
-      : [];
-    const teamIds = teams.map((team) => team._id);
-    const evaluations = teamIds.length
-      ? await HackathonJuryEvaluation.find({
-          hackathonId: program._id,
-          teamId: { $in: teamIds },
-        })
-          .select("teamId round status totalScore juryMemberId")
-          .lean()
-      : [];
-
-    const evaluationByTeamRound = new Map();
-    for (const evaluation of evaluations) {
-      const key = `${String(evaluation.teamId)}:${evaluation.round || 1}`;
-      if (
-        !evaluationByTeamRound.has(key) ||
-        String(evaluation.juryMemberId) === String(req.juryUser.id)
-      ) {
-        evaluationByTeamRound.set(key, evaluation);
-      }
-    }
+    const [teams, evaluations] = await Promise.all([
+      Hackathon.find({
+        hackathonId: program._id,
+        status: "active",
+        problem_statement_id: { $in: statementIds },
+      })
+        .sort({ createdAt: 1 })
+        .lean(),
+      HackathonJuryEvaluation.find({
+        hackathonId: program._id,
+        juryMemberId: req.juryUser.id,
+      })
+        .select("teamId round status totalScore")
+        .lean(),
+    ]);
+    const evaluationByTeamRound = new Map(
+      evaluations.map((evaluation) => [
+        `${String(evaluation.teamId)}:${evaluation.round || 1}`,
+        evaluation,
+      ]),
+    );
     return res.json({
       items: teams.map((team) => {
         const round = teamRound(team);
@@ -1177,16 +1165,9 @@ router.get(
     try {
       const context = await loadEvaluationContext(req, res);
       if (!context) return;
-      let evaluation = await HackathonJuryEvaluation.findOne(
+      const evaluation = await HackathonJuryEvaluation.findOne(
         evaluationKey(context, req.juryUser.id),
       ).lean();
-      if (!evaluation) {
-        evaluation = await HackathonJuryEvaluation.findOne({
-          hackathonId: context.program._id,
-          teamId: context.team._id,
-          round: context.round,
-        }).lean();
-      }
       return res.json({
         evaluation: evaluation || null,
         rubric: context.criteria,
@@ -1308,7 +1289,6 @@ router.post(
             setDefaultsOnInsert: true,
           },
         );
-        await syncTeamCutoffQualification(context.program._id, context.team._id, context.round);
         return res.json({ evaluation });
       }
       const evaluation = await HackathonJuryEvaluation.findOne(
@@ -1333,7 +1313,6 @@ router.post(
       evaluation.status = "submitted";
       evaluation.submittedAt = new Date();
       await evaluation.save();
-      await syncTeamCutoffQualification(context.program._id, context.team._id, context.round);
       return res.json({ evaluation });
     } catch (error) {
       if (error?.code === 11000)

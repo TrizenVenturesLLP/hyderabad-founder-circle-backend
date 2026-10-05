@@ -3,11 +3,12 @@ import { HackathonJuryEvaluation } from "../models/HackathonJuryEvaluation.js";
 import { HackathonJuryMembership } from "../models/HackathonJuryMembership.js";
 import { HackathonProgram } from "../models/HackathonProgram.js";
 import { ProblemStatement } from "../models/ProblemStatement.js";
+import { JuryUser } from "../models/JuryUser.js";
 
 const roundScore = (value) => Math.round(value * 10) / 10;
 
-/** Round 1 has a qualifying cutoff; Round 2 is the final round and has none. */
-export const MAX_EVALUATION_ROUNDS = 2;
+/** Round 1 and 2 have qualifying cutoffs; Round 3 is the final round. */
+export const MAX_EVALUATION_ROUNDS = 3;
 
 export function teamRound(team) {
   const round = Number(team?.round);
@@ -41,18 +42,25 @@ export function roundResultFor(program, round) {
 }
 
 /**
- * A team's outcome in the qualifying round (Round 1), once its cutoff is decided.
+ * A team's outcome in the highest evaluation round it took part in that has a decided result.
  * Pass `publishedOnly` for participant-facing views.
  */
 export function teamRoundOutcome(program, team, { publishedOnly = false } = {}) {
-  const latest = teamRound(team);
-  const decided = (program?.roundResults || []).find(
-    (item) => item.round < MAX_EVALUATION_ROUNDS && (!publishedOnly || item.publishedAt),
-  );
+  const teamId = String(team?._id);
+  const results = (program?.roundResults || [])
+    .filter((item) => item.round < MAX_EVALUATION_ROUNDS && (!publishedOnly || item.publishedAt))
+    .sort((a, b) => b.round - a.round);
+
+  const decided =
+    results.find((item) =>
+      Array.isArray(item.evaluatedTeamIds)
+        ? item.evaluatedTeamIds.some((id) => String(id) === teamId)
+        : teamRound(team) >= item.round,
+    ) || results[0];
+
   if (!decided) return null;
   if (Array.isArray(decided.evaluatedTeamIds)) {
     if (!team?.problem_statement_id) return null;
-    const teamId = String(team._id);
     if (!decided.evaluatedTeamIds.some((id) => String(id) === teamId)) {
       return { round: decided.round, status: "pending", nextRound: null };
     }
@@ -61,7 +69,7 @@ export function teamRoundOutcome(program, team, { publishedOnly = false } = {}) 
       ? { round: decided.round, status: "qualified", nextRound: decided.round + 1 }
       : { round: decided.round, status: "disqualified", nextRound: null };
   }
-  if (latest > decided.round) {
+  if (teamRound(team) > decided.round) {
     return { round: decided.round, status: "qualified", nextRound: decided.round + 1 };
   }
   return team?.problem_statement_id
@@ -137,13 +145,12 @@ export async function juryWorkload(programId, juryUserId) {
         .lean()
     : [];
   const evaluated = teams.length
-    ? (
-        await HackathonJuryEvaluation.distinct("teamId", {
-          hackathonId: programId,
-          status: "submitted",
-          teamId: { $in: teams.map((team) => team._id) },
-        })
-      ).length
+    ? await HackathonJuryEvaluation.countDocuments({
+        hackathonId: programId,
+        juryMemberId: juryUserId,
+        status: "submitted",
+        teamId: { $in: teams.map((team) => team._id) },
+      })
     : 0;
   const owed = teams.reduce(
     (sum, team) => sum + teamRound(team) - (awaitingSubmission(team) ? 1 : 0),
@@ -161,7 +168,7 @@ export async function juryWorkload(programId, juryUserId) {
 export async function buildHackathonLeaderboard(programId, round = 1) {
   const [teams, evaluations, totalJuryMembers, program] = await Promise.all([
     Hackathon.find({ hackathonId: programId, status: "active" })
-      .select("team_name lead_name problem_statement_id round")
+      .select("team_name lead_name problem_statement_id round domainId")
       .lean(),
     HackathonJuryEvaluation.find({ hackathonId: programId, status: "submitted" })
       .select("teamId juryMemberId round totalScore")
@@ -196,12 +203,6 @@ export async function buildHackathonLeaderboard(programId, round = 1) {
       item.totalScore,
     ]),
   );
-  const scoreByTeamRound = new Map(
-    evaluations.map((item) => [
-      `${String(item.teamId)}:${item.round || 1}`,
-      item.totalScore,
-    ]),
-  );
   // Each team is scored only by the Jury member who claimed its problem statement.
   const requiredEvaluations = 1;
 
@@ -209,12 +210,8 @@ export async function buildHackathonLeaderboard(programId, round = 1) {
     const teamId = String(team._id);
     const statement = statementById.get(team.problem_statement_id);
     const ownerId = statement?.claimedBy?._id ? String(statement.claimedBy._id) : "";
-    const ownerScore = (value) => {
-      if (ownerId && scoreByKey.has(`${teamId}:${value}:${ownerId}`)) {
-        return scoreByKey.get(`${teamId}:${value}:${ownerId}`);
-      }
-      return scoreByTeamRound.get(`${teamId}:${value}`) ?? null;
-    };
+    const ownerScore = (value) =>
+      ownerId ? (scoreByKey.get(`${teamId}:${value}:${ownerId}`) ?? null) : null;
     const score = ownerScore(round);
     const submittedEvaluations = score === null ? 0 : 1;
     const manuallyTracked = Array.isArray(decision?.evaluatedTeamIds);
@@ -230,7 +227,7 @@ export async function buildHackathonLeaderboard(programId, round = 1) {
       leadName: team.lead_name || "",
       problemStatementId: team.problem_statement_id || "",
       problemStatementTitle: statement?.title || "",
-      domainId: statement?.domainId || "",
+      domainId: team.domainId || statement?.domainId || "",
       juryName: statement?.claimedBy?.name || "",
       submittedEvaluations,
       totalJuryMembers: ownerId ? 1 : 0,
@@ -306,55 +303,3 @@ export async function buildHackathonLeaderboard(programId, round = 1) {
     items,
   };
 }
-
-export async function syncTeamCutoffQualification(programId, teamId, round) {
-  const program = await HackathonProgram.findById(programId);
-  if (!program) return null;
-
-  const roundResult = (program.roundResults || []).find((item) => item.round === round);
-  if (!roundResult || roundResult.cutoff === null || roundResult.cutoff === undefined) return null;
-
-  const board = await buildHackathonLeaderboard(program._id, round);
-  const entry = board.items.find((item) => String(item.teamId) === String(teamId));
-
-  if (!entry || entry.averageScore === null) return null;
-
-  const stringTeamId = String(teamId);
-  const qualified = entry.averageScore >= roundResult.cutoff;
-
-  if (!Array.isArray(roundResult.evaluatedTeamIds)) {
-    roundResult.evaluatedTeamIds = [];
-  }
-  if (!Array.isArray(roundResult.qualifiedTeamIds)) {
-    roundResult.qualifiedTeamIds = [];
-  }
-
-  const alreadyEvaluated = roundResult.evaluatedTeamIds.some((id) => String(id) === stringTeamId);
-  if (!alreadyEvaluated) {
-    roundResult.evaluatedTeamIds.push(teamId);
-  }
-
-  const alreadyQualified = roundResult.qualifiedTeamIds.some((id) => String(id) === stringTeamId);
-  if (qualified && !alreadyQualified) {
-    roundResult.qualifiedTeamIds.push(teamId);
-  } else if (!qualified && alreadyQualified) {
-    roundResult.qualifiedTeamIds = roundResult.qualifiedTeamIds.filter(
-      (id) => String(id) !== stringTeamId,
-    );
-  }
-
-  roundResult.qualifiedCount = roundResult.qualifiedTeamIds.length;
-  roundResult.disqualifiedCount =
-    roundResult.evaluatedTeamIds.length - roundResult.qualifiedCount;
-
-  await Promise.all([
-    program.save(),
-    Hackathon.updateOne(
-      { _id: teamId, hackathonId: program._id },
-      { $set: { round: qualified ? round + 1 : round } },
-    ),
-  ]);
-
-  return { qualified, roundResult: roundResultFor(program, round) };
-}
-

@@ -1,0 +1,495 @@
+{
+  "timestamp": "2026-10-05T09:29:01.165Z",
+  "program": {
+    "_id": "6abdd63d1de0d6770f316f1b",
+    "roundResults": [
+      {
+        "round": 1,
+        "cutoff": 70,
+        "qualifiedCount": 45,
+        "disqualifiedCount": 125,
+        "evaluatedTeamIds": [
+          "6abfe4ab2f29b056bf2ffb50",
+          "6ac0a5892f29b056bf322a35",
+          "6ac0c28a2f29b056bf32550a",
+          "6ac066f22f29b056bf3193a9",
+          "6abe06bd41b1815ba89b670f",
+          "6abfe5f22f29b056bf300f23",
+          "6abfe8082f29b056bf303c36",
+          "6abfea932f29b056bf3081d8",
+          "6abfe4ae2f29b056bf2ffba5",
+          "6abfcae2b3699262ba31e104",
+          "6ac0a3032f29b056bf3226e9",
+          "6abfe7212f29b056bf3027a2",
+          "6abfe3ce2f29b056bf2ff50e",
+          "6abfe65e2f29b056bf30193b",
+          "6ac0869f2f29b056bf31c463",
+          "6abfe4782f29b056bf2ff95f",
+          "6abfe4842f29b056bf2ff9ba",
+          "6abfe5e12f29b056bf300d3a",
+          "6abfe9ab2f29b056bf30675b",
+          "6ac051302f29b056bf317776",
+          "6ac07b422f29b056bf31a7f3",
+          "6ac0ca092f29b056bf328abb",
+          "6abfe3ab2f29b056bf2ff468",
+          "6abfe4572f29b056bf2ff879",
+          "6abfe7812f29b056bf3030d7",
+          "6abffaf62f29b056bf313d12",
+          "6ac00d902f29b056bf3164e2",
+          "6ac061212f29b056bf318e47",
+          "6ac0baef2f29b056bf323a69",
+          "6abfe68e2f29b056bf301cd6",
+          "6abfe44e2f29b056bf2ff82c",
+          "6abfe8782f29b056bf3048f4",
+          "6abfe5a72f29b056bf300902",
+          "6abfe62a2f29b056bf3014a1",
+          "6abfe6222f29b056bf3013ca",
+          "6ac05e722f29b056bf3189a6",
+          "6abfeded2f29b056bf30c6a5",
+          "6abff2e12f29b056bf310297",
+          "6abfe87f2f29b056bf3049b8",
+          "6abfe5f82f29b056bf300fda",
+          "6abfe7e82f29b056bf30396b",
+          "6abfe8212f29b056bf303f1d",
+          "6ac00d992f29b056bf3164f6",
+          "6abfe4be2f29b056bf2ffc81",
+          "6abfe4f52f29b056bf2fff67",
+          "6ac0bab72f29b056bf32399e",
+          "6abfe4852f29b056bf2ff9d3",
+          "6abfe61b2f29b056bf30130c",
+          "6abfe99f2f29b056bf3065ca",
+          "6abfe9022f29b056bf3056c2",
+          "6ac00cba2f29b056bf316413",
+          "6ac0375c2f29b056bf316c9a",
+          "6ac0537b2f29b056bf317adc",
+          "6ac088e42f29b056bf31cc4c",
+          "6ac07d9c2f29b056bf31acc1",
+          "6abfe5e72f29b056bf300dec",
+          "6abfe6732f29b056bf301a99",
+          "6abfe4972f29b056bf2ffa84",
+          "6abfe5562f29b056bf3003f9",
+          "6abfeabb2f29b056bf3085e4",
+          "6abfe4102f29b056bf2ff689",
+          "6abfe5172f29b056bf3000e3",
+          "6abfe6da2f29b056bf30221c",
+          "6abfe8b62f29b056bf304f54",
+          "6abfef7f2f29b056bf30def0",
+          "6abfe7be2f29b056bf303630",
+          "6abfe8402f29b056bf304272",
+          "6abfe9f62f29b056bf306f32",
+          "6ac0641e2f29b056bf319090",
+          "6abfe48a2f29b056bf2ff9f6",
+          "6abfe6a02f29b056bf301e64",
+          "6abfe9892f29b056bf3063c8",
+          "6ac083692f29b056bf31baf1",
+          "6abfe56b2f29b056bf3004bc",
+          "6ac071272f29b056bf319cf0",
+          "6abfeb952f29b056bf309ccc",
+          "6ac07d032f29b056bf31ab5b",
+          "6abfe4c42f29b056bf2ffce0",
+          "6ac055762f29b056bf317dc0",
+          "6abfe59e2f29b056bf300818",
+          "6abfe49e2f29b056bf2ffada",
+          "6abff59a2f29b056bf31192a",
+          "6abfea1d2f29b056bf3073ed",
+          "6abff4642f29b056bf310f6e",
+          "6ac08b942f29b056bf31da59",
+          "6abfe3db2f29b056bf2ff573",
+          "6abfe40b2f29b056bf2ff662",
+          "6abfe6e82f29b056bf30232f",
+          "6abfe80e2f29b056bf303cfe",
+          "6abfe8ab2f29b056bf304e49",
+          "6abfe7512f29b056bf302bef",
+          "6abfeb3e2f29b056bf3095a1",
+          "6abff7742f29b056bf312a96",
+          "6abfe5292f29b056bf3001c6",
+          "6abfe6452f29b056bf301772",
+          "6ac0a4532f29b056bf3228fa",
+          "6abfe9292f29b056bf305a58",
+          "6abfec262f29b056bf30a925",
+          "6ac042c02f29b056bf316ef5",
+          "6ac076df2f29b056bf31a212",
+          "6ac099f52f29b056bf320de0",
+          "6abfe3c72f29b056bf2ff4e3",
+          "6abfe59d2f29b056bf300801",
+          "6abff6c92f29b056bf312415",
+          "6abfe5e62f29b056bf300dd1",
+          "6abfe7602f29b056bf302d5c",
+          "6abfe84e2f29b056bf3043b2",
+          "6abfe9192f29b056bf3058e3",
+          "6abfe9782f29b056bf306132",
+          "6abfea8b2f29b056bf3080ec",
+          "6abfec5e2f29b056bf30ac5a",
+          "6abfe4772f29b056bf2ff945",
+          "6abfe5ce2f29b056bf300bf0",
+          "6abfe7e02f29b056bf303891",
+          "6abfeb452f29b056bf309661",
+          "6abfe5c12f29b056bf300ae3",
+          "6abfff972f29b056bf315510",
+          "6abfe45b2f29b056bf2ff8a3",
+          "6abfe5a32f29b056bf30086c",
+          "6abfe5a42f29b056bf3008a7",
+          "6abfe7762f29b056bf302fd2",
+          "6abfe8d12f29b056bf30526d",
+          "6ac032c82f29b056bf316ba5",
+          "6ac0a2912f29b056bf3225fc",
+          "6abfe4652f29b056bf2ff8d0",
+          "6abfe5a82f29b056bf30091f",
+          "6abfeda52f29b056bf30c16e",
+          "6ac064f52f29b056bf3191fe",
+          "6ac0a3012f29b056bf3226c6",
+          "6ac0bb3b2f29b056bf323af0",
+          "6abfe9632f29b056bf305f86",
+          "6abff5312f29b056bf311599",
+          "6ac050842f29b056bf3176cf",
+          "6ac0a3a22f29b056bf32285b",
+          "6abfe4e32f29b056bf2ffe7c",
+          "6abfe5002f29b056bf2fffcf",
+          "6ac0773b2f29b056bf31a25f",
+          "6abfec502f29b056bf30abb3",
+          "6ac09d292f29b056bf321451",
+          "6ac148be037a544955725515",
+          "6abff0652f29b056bf30ea12",
+          "6ac050392f29b056bf31767c",
+          "6ac08c682f29b056bf31f347",
+          "6abfe46e2f29b056bf2ff914",
+          "6abfe8c02f29b056bf3050a0",
+          "6ac075032f29b056bf31a09a",
+          "6ac0c41e2f29b056bf3260aa",
+          "6abfe82a2f29b056bf304036",
+          "6abfe9392f29b056bf305bf3",
+          "6abfe8da2f29b056bf30530a",
+          "6abff10a2f29b056bf30f238",
+          "6ac05fca2f29b056bf318c76",
+          "6ac0990e2f29b056bf320b97",
+          "6abfe3ab2f29b056bf2ff457",
+          "6abfe4462f29b056bf2ff7e2",
+          "6abfe7282f29b056bf30285b",
+          "6abfeae52f29b056bf308ac8",
+          "6ac072052f29b056bf319e07",
+          "6ac0a6a62f29b056bf322c2b",
+          "6abfe8b32f29b056bf304f1c",
+          "6ac0e356d6185344ace7ac93",
+          "6abffc022f29b056bf3141c4",
+          "6abff3c02f29b056bf310b40",
+          "6ac0be012f29b056bf3240e5",
+          "6ac0c7b82f29b056bf3278eb",
+          "6ac0ca692f29b056bf328d23",
+          "6ac12f6bbc3fe1926025ea01",
+          "6ac143d3915304630daa3791",
+          "6abfed4c2f29b056bf30bbc6",
+          "6abfe74b2f29b056bf302b4f"
+        ],
+        "qualifiedTeamIds": [
+          "6abfe4ab2f29b056bf2ffb50",
+          "6ac0a5892f29b056bf322a35",
+          "6ac0c28a2f29b056bf32550a",
+          "6ac066f22f29b056bf3193a9",
+          "6abe06bd41b1815ba89b670f",
+          "6abfe5f22f29b056bf300f23",
+          "6abfe8082f29b056bf303c36",
+          "6abfea932f29b056bf3081d8",
+          "6abfe4ae2f29b056bf2ffba5",
+          "6abfcae2b3699262ba31e104",
+          "6ac0a3032f29b056bf3226e9",
+          "6abfe7212f29b056bf3027a2",
+          "6abfe3ce2f29b056bf2ff50e",
+          "6abfe65e2f29b056bf30193b",
+          "6ac0869f2f29b056bf31c463",
+          "6abfe4782f29b056bf2ff95f",
+          "6abfe4842f29b056bf2ff9ba",
+          "6abfe5e12f29b056bf300d3a",
+          "6abfe9ab2f29b056bf30675b",
+          "6ac051302f29b056bf317776",
+          "6ac07b422f29b056bf31a7f3",
+          "6ac0ca092f29b056bf328abb",
+          "6abfe3ab2f29b056bf2ff468",
+          "6abfe4572f29b056bf2ff879",
+          "6abfe7812f29b056bf3030d7",
+          "6abffaf62f29b056bf313d12",
+          "6ac00d902f29b056bf3164e2",
+          "6ac061212f29b056bf318e47",
+          "6ac0baef2f29b056bf323a69",
+          "6abfe68e2f29b056bf301cd6",
+          "6abfe44e2f29b056bf2ff82c",
+          "6abfe8782f29b056bf3048f4",
+          "6abfe5a72f29b056bf300902",
+          "6abfe62a2f29b056bf3014a1",
+          "6abfe6222f29b056bf3013ca",
+          "6ac05e722f29b056bf3189a6",
+          "6abfeded2f29b056bf30c6a5",
+          "6abff2e12f29b056bf310297",
+          "6abfe87f2f29b056bf3049b8",
+          "6abfe5f82f29b056bf300fda",
+          "6abfe7e82f29b056bf30396b",
+          "6abfe8212f29b056bf303f1d",
+          "6ac00d992f29b056bf3164f6",
+          "6abfe5e72f29b056bf300dec",
+          "6abfe4852f29b056bf2ff9d3"
+        ],
+        "decidedAt": "2026-10-04T02:56:26.270Z",
+        "publishedAt": null
+      }
+    ]
+  },
+  "teams": [
+    {
+      "_id": "6abfe3ab2f29b056bf2ff468",
+      "team_name": "Silent Void",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe3ce2f29b056bf2ff50e",
+      "team_name": "CodeNova",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe44e2f29b056bf2ff82c",
+      "team_name": "RISING SUNS",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe4572f29b056bf2ff879",
+      "team_name": "CODE BLOODED",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe4782f29b056bf2ff95f",
+      "team_name": "ByteForge",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe4842f29b056bf2ff9ba",
+      "team_name": "curiora",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe4852f29b056bf2ff9d3",
+      "team_name": "Hack reapers",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe4ab2f29b056bf2ffb50",
+      "team_name": "3VN",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe4ae2f29b056bf2ffba5",
+      "team_name": "BrainBytes",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe5a72f29b056bf300902",
+      "team_name": "Craftsman",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe5e12f29b056bf300d3a",
+      "team_name": "VAJRA",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe5e72f29b056bf300dec",
+      "team_name": "Team Not Found",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe5f22f29b056bf300f23",
+      "team_name": "19",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe5f82f29b056bf300fda",
+      "team_name": "Team faang",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe6222f29b056bf3013ca",
+      "team_name": "VibeStak",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe62a2f29b056bf3014a1",
+      "team_name": "Velora",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe65e2f29b056bf30193b",
+      "team_name": "Codenest",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe68e2f29b056bf301cd6",
+      "team_name": "NexGen Coders",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe7212f29b056bf3027a2",
+      "team_name": "Genesis",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe7812f29b056bf3030d7",
+      "team_name": "VENOM",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe7e82f29b056bf30396b",
+      "team_name": "Ignitets",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe8082f29b056bf303c36",
+      "team_name": "NYXARA",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe8212f29b056bf303f1d",
+      "team_name": "Syntax Squad",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe8782f29b056bf3048f4",
+      "team_name": "MARK 85",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe87f2f29b056bf3049b8",
+      "team_name": "TechSpy",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfe9ab2f29b056bf30675b",
+      "team_name": "Dinoco",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfea932f29b056bf3081d8",
+      "team_name": "The Phi",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abfeded2f29b056bf30c6a5",
+      "team_name": "LYDAR",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abff2e12f29b056bf310297",
+      "team_name": "Agent Techies",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6abffaf62f29b056bf313d12",
+      "team_name": "Team Kaizen",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6ac00d902f29b056bf3164e2",
+      "team_name": "It_Sparks",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6ac00d992f29b056bf3164f6",
+      "team_name": "The_sparks",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6ac051302f29b056bf317776",
+      "team_name": "Vyom",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6ac05e722f29b056bf3189a6",
+      "team_name": "PROBLEM SOLVERS",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6ac061212f29b056bf318e47",
+      "team_name": "The Shush Patrol",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6ac066f22f29b056bf3193a9",
+      "team_name": "Matrix",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6ac07b422f29b056bf31a7f3",
+      "team_name": "CodeCommit",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6ac0869f2f29b056bf31c463",
+      "team_name": "Tokyo Drifters",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6ac0a3032f29b056bf3226e9",
+      "team_name": "404",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6ac0a5892f29b056bf322a35",
+      "team_name": "Radix",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6ac0baef2f29b056bf323a69",
+      "team_name": "Microbucks",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6ac0c28a2f29b056bf32550a",
+      "team_name": "Sanraksh",
+      "round": 2,
+      "domainId": null
+    },
+    {
+      "_id": "6ac0ca092f29b056bf328abb",
+      "team_name": "Nextgen",
+      "round": 2,
+      "domainId": null
+    }
+  ]
+}

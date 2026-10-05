@@ -20,7 +20,6 @@ import {
   MAX_EVALUATION_ROUNDS,
   parseRound,
   roundResultFor,
-  syncTeamCutoffQualification,
   teamRound,
   teamRoundTotals,
 } from "../../services/hackathonLeaderboard.js";
@@ -130,6 +129,13 @@ router.patch("/:hackathonId/problem-statements/:statementId/approval", async (re
       return res.status(400).json({ error: "A reason is required when rejecting a statement." });
     }
     const statementId = String(req.params.statementId || "").trim().toUpperCase();
+    const countApprovedProposals = () =>
+      ProblemStatement.countDocuments({
+        hackathonId: program._id,
+        proposedByTeam: { $ne: null },
+        status: "active",
+      });
+    const slotsFullError = `All ${TEAM_PROPOSAL_LIMIT} team-proposed statements are already approved. Reject this one, or delete an approved team proposal first.`;
 
     const pending = await ProblemStatement.findOne({
       hackathonId: program._id,
@@ -142,6 +148,9 @@ router.patch("/:hackathonId/problem-statements/:statementId/approval", async (re
       return res.status(404).json({ error: "Pending Problem Statement not found." });
     }
     if (action === "approve" && pending.proposedByTeam) {
+      if ((await countApprovedProposals()) >= TEAM_PROPOSAL_LIMIT) {
+        return res.status(409).json({ error: slotsFullError });
+      }
       const team = await Hackathon.findOne({
         _id: pending.proposedByTeam,
         hackathonId: program._id,
@@ -188,6 +197,10 @@ router.patch("/:hackathonId/problem-statements/:statementId/approval", async (re
           { _id: statement._id },
           { $set: { status: "pending_approval", reviewedBy: null, reviewedAt: null } },
         );
+      if ((await countApprovedProposals()) > TEAM_PROPOSAL_LIMIT) {
+        await revert();
+        return res.status(409).json({ error: slotsFullError });
+      }
       // Approving a team's own idea confirms it as that team's statement.
       const confirmed = await Hackathon.updateOne(
         {
@@ -813,68 +826,7 @@ router.post("/:hackathonId/rounds/:round/cutoff", async (req, res) => {
   }
 });
 
-/** Evaluates all scored teams in a round based on the set cutoff. */
-router.post("/:hackathonId/rounds/:round/evaluate", async (req, res) => {
-  try {
-    const context = await loadRoundForResult(req, res);
-    if (!context) return;
-    const { program, round, result } = context;
-    if (!result) {
-      return res
-        .status(409)
-        .json({ error: `Set the Round ${round} cutoff before evaluating teams.` });
-    }
-    if (result.publishedAt) {
-      return res
-        .status(409)
-        .json({ error: `Unpublish Round ${round} results before evaluating teams.` });
-    }
-
-    const board = await buildHackathonLeaderboard(program._id, round);
-    const scoredItems = board.items.filter((item) => item.averageScore !== null);
-
-    const roundResult = program.roundResults.find((item) => item.round === round);
-    const evaluatedTeamIds = scoredItems.map((item) => item.teamId);
-    const qualifiedTeamIds = scoredItems
-      .filter((item) => item.averageScore >= roundResult.cutoff)
-      .map((item) => item.teamId);
-
-    roundResult.evaluatedTeamIds = evaluatedTeamIds;
-    roundResult.qualifiedTeamIds = qualifiedTeamIds;
-    roundResult.qualifiedCount = qualifiedTeamIds.length;
-    roundResult.disqualifiedCount = evaluatedTeamIds.length - qualifiedTeamIds.length;
-
-    await program.save();
-
-    await Promise.all([
-      Hackathon.updateMany(
-        { _id: { $in: qualifiedTeamIds }, hackathonId: program._id },
-        { $set: { round: round + 1 } },
-      ),
-      Hackathon.updateMany(
-        {
-          _id: {
-            $in: evaluatedTeamIds.filter((id) => !qualifiedTeamIds.includes(id)),
-          },
-          hackathonId: program._id,
-        },
-        { $set: { round } },
-      ),
-    ]);
-
-    return res.json({
-      evaluated: evaluatedTeamIds.length,
-      qualifiedCount: qualifiedTeamIds.length,
-      disqualifiedCount: evaluatedTeamIds.length - qualifiedTeamIds.length,
-      result: roundResultFor(program, round),
-    });
-  } catch (error) {
-    console.error("[admin/hackathons round evaluate]", error);
-    return res.status(500).json({ error: "Could not evaluate the round." });
-  }
-});
-
-/** Evaluates or re-evaluates a team for a round. */
+/** Clears a round's cutoff and moves its teams back to that round. */
 router.post("/:hackathonId/rounds/:round/teams/:teamId/evaluate", async (req, res) => {
   try {
     const context = await loadRoundForResult(req, res);
@@ -901,14 +853,42 @@ router.post("/:hackathonId/rounds/:round/teams/:teamId/evaluate", async (req, re
       return res.status(409).json({ error: "The team must select a problem statement first." });
     }
 
-    const syncResult = await syncTeamCutoffQualification(program._id, team._id, round);
-    if (!syncResult) {
+    const board = await buildHackathonLeaderboard(program._id, round);
+    const entry = board.items.find((item) => item.teamId === String(team._id));
+    if (!entry || entry.averageScore === null) {
       return res.status(409).json({ error: "The Jury must score this team before evaluation." });
     }
 
+    const roundResult = program.roundResults.find((item) => item.round === round);
+    if (!Array.isArray(roundResult.evaluatedTeamIds)) {
+      const legacyEvaluated = board.items.filter(
+        (item) => item.qualification === "qualified",
+      );
+      roundResult.evaluatedTeamIds = legacyEvaluated.map((item) => item.teamId);
+      roundResult.qualifiedTeamIds = legacyEvaluated
+        .filter((item) => item.averageScore >= roundResult.cutoff)
+        .map((item) => item.teamId);
+    }
+    if (roundResult.evaluatedTeamIds.some((id) => String(id) === String(team._id))) {
+      return res.status(409).json({ error: "This team has already been evaluated." });
+    }
+
+    roundResult.evaluatedTeamIds.push(team._id);
+    const qualified = entry.averageScore >= roundResult.cutoff;
+    if (qualified) roundResult.qualifiedTeamIds.push(team._id);
+    roundResult.qualifiedCount = roundResult.qualifiedTeamIds.length;
+    roundResult.disqualifiedCount =
+      roundResult.evaluatedTeamIds.length - roundResult.qualifiedCount;
+    await Promise.all([
+      program.save(),
+      Hackathon.updateOne(
+        { _id: team._id, hackathonId: program._id },
+        { $set: { round: qualified ? round + 1 : round } },
+      ),
+    ]);
     return res.json({
-      qualification: syncResult.qualified ? "qualified" : "disqualified",
-      result: syncResult.roundResult,
+      qualification: qualified ? "qualified" : "disqualified",
+      result: roundResultFor(program, round),
     });
   } catch (error) {
     console.error("[admin/hackathons team evaluation]", error);
@@ -1000,94 +980,5 @@ router.post(
     }
   },
 );
-
-router.put("/:hackathonId/evaluations/:evaluationId", async (req, res) => {
-  try {
-    const program = await loadAuthorizedProgram(req, res);
-    if (!program) return;
-
-    const { criteriaScores, comments, status, teamId, juryMemberId, round } = req.body;
-    const evaluationId = req.params.evaluationId;
-
-    let evaluation;
-    if (mongoose.Types.ObjectId.isValid(evaluationId)) {
-      evaluation = await HackathonJuryEvaluation.findOne({
-        _id: evaluationId,
-        hackathonId: program._id,
-      });
-    }
-
-    if (!evaluation && teamId) {
-      const parsedRound = parseRound(round || 1, 1);
-      evaluation = await HackathonJuryEvaluation.findOne({
-        hackathonId: program._id,
-        teamId,
-        round: parsedRound,
-      });
-
-      if (!evaluation) {
-        let targetJuryMemberId = juryMemberId;
-        if (!targetJuryMemberId) {
-          const teamObj = await Hackathon.findById(teamId).select("problem_statement_id").lean();
-          if (teamObj?.problem_statement_id) {
-            const statement = await ProblemStatement.findOne({
-              hackathonId: program._id,
-              id: teamObj.problem_statement_id,
-            }).select("claimedBy").lean();
-            if (statement?.claimedBy) {
-              targetJuryMemberId = String(statement.claimedBy);
-            }
-          }
-        }
-
-        if (targetJuryMemberId) {
-          evaluation = new HackathonJuryEvaluation({
-            hackathonId: program._id,
-            teamId,
-            juryMemberId: targetJuryMemberId,
-            round: parsedRound,
-            rubricVersion: program.rubricVersion || 1,
-          });
-        }
-      }
-    }
-
-    if (!evaluation) {
-      return res.status(404).json({ error: "Evaluation record not found." });
-    }
-
-    if (Array.isArray(criteriaScores)) {
-      evaluation.criteriaScores = criteriaScores.map((item) => ({
-        criterionId: String(item.criterionId || "").trim(),
-        score: Math.max(0, Number(item.score) || 0),
-      }));
-    }
-
-    const totalScore = evaluation.criteriaScores.reduce(
-      (sum, item) => sum + (Number(item.score) || 0),
-      0,
-    );
-    evaluation.totalScore = Math.min(100, Math.max(0, totalScore));
-
-    if (typeof comments === "string") {
-      evaluation.comments = comments.trim();
-    }
-
-    evaluation.status = status === "draft" ? "draft" : "submitted";
-    if (evaluation.status === "submitted" && !evaluation.submittedAt) {
-      evaluation.submittedAt = new Date();
-    }
-    evaluation.reopenedAt = null;
-
-    await evaluation.save();
-
-    await syncTeamCutoffQualification(program._id, evaluation.teamId, evaluation.round);
-
-    return res.json({ message: "Evaluation updated successfully", evaluation });
-  } catch (error) {
-    console.error("[admin/hackathons evaluation edit]", error);
-    return res.status(500).json({ error: "Could not update evaluation." });
-  }
-});
 
 export default router;

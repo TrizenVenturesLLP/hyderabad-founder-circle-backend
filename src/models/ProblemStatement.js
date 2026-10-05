@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 
-/** Max team-proposed statements an admin can approve per Hackathon (null = unlimited). */
-export const TEAM_PROPOSAL_LIMIT = null;
+/** Max team-proposed statements an admin can approve per Hackathon. */
+export const TEAM_PROPOSAL_LIMIT = 5;
 export const DEFAULT_PROBLEM_STATEMENT_CONTACT_INFO = "8639648822";
 
 const problemStatementSchema = new mongoose.Schema(

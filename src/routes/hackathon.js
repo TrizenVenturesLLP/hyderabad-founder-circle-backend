@@ -552,91 +552,6 @@ hackathonRouter.post("/team/members/invite", async (req, res) => {
   }
 });
 
-hackathonRouter.post("/team/members/update", async (req, res) => {
-  try {
-    const leadEmail = String(req.body.email || "").trim().toLowerCase();
-    const leadPhone = String(req.body.phone || "").trim();
-    const targetEmail = String(req.body.target_email || "").trim().toLowerCase();
-    const fullName = String(req.body.member?.full_name || "").trim();
-    const memberEmail = String(req.body.member?.email || "").trim().toLowerCase();
-    const memberPhone = String(req.body.member?.phone || "").trim();
-
-    if (
-      !leadEmail ||
-      !leadPhone ||
-      !targetEmail ||
-      !fullName ||
-      !/^\S+@\S+\.\S+$/.test(memberEmail) ||
-      !/^\+?[0-9\s()-]{10,}$/.test(memberPhone)
-    ) {
-      return res.status(400).json({ message: "Please provide valid member details (Name, Email, Phone)." });
-    }
-
-    const program = await HackathonProgram.findOne({ slug: CURRENT_HACKATHON_SLUG }).select("_id");
-    const team = program
-      ? await Hackathon.findOne({ email: leadEmail, phone: leadPhone, hackathonId: program._id })
-      : null;
-
-    if (!team) {
-      return res.status(401).json({ message: "Team lead verification failed." });
-    }
-
-    const isTargetLead = String(team.email).trim().toLowerCase() === targetEmail;
-
-    if (isTargetLead) {
-      if (memberEmail !== targetEmail) {
-        const memberEmails = (team.members || []).map((m) => String(m.email).trim().toLowerCase());
-        if (memberEmails.includes(memberEmail)) {
-          return res.status(409).json({ message: "This email is already used by a team member." });
-        }
-      }
-      team.lead_name = fullName;
-      team.email = memberEmail;
-      team.phone = memberPhone;
-    } else {
-      const memberIndex = (team.members || []).findIndex(
-        (m) => String(m.email).trim().toLowerCase() === targetEmail
-      );
-      if (memberIndex === -1) {
-        return res.status(404).json({ message: "Team member not found." });
-      }
-
-      if (memberEmail !== targetEmail) {
-        if (String(team.email).trim().toLowerCase() === memberEmail) {
-          return res.status(409).json({ message: "This email is used by the team lead." });
-        }
-        const duplicateIndex = (team.members || []).findIndex(
-          (m, idx) => idx !== memberIndex && String(m.email).trim().toLowerCase() === memberEmail
-        );
-        if (duplicateIndex !== -1) {
-          return res.status(409).json({ message: "This email is already used by another member." });
-        }
-      }
-
-      team.members[memberIndex].full_name = fullName;
-      team.members[memberIndex].email = memberEmail;
-      team.members[memberIndex].phone = memberPhone;
-    }
-
-    await team.save();
-
-    if (memberEmail !== targetEmail && program?._id) {
-      await HackathonParticipantAccount.updateOne(
-        { hackathonId: program._id, normalizedEmail: targetEmail },
-        { $set: { normalizedEmail: memberEmail } }
-      ).catch(() => {});
-    }
-
-    return res.status(200).json({
-      message: "Team member details updated successfully.",
-      user: team,
-    });
-  } catch (error) {
-    console.error("Update team member error:", error);
-    return res.status(500).json({ message: "Could not update team member details." });
-  }
-});
-
 hackathonRouter.post("/confirm-problem", async (req, res) => {
   try {
     const email = String(req.body?.email || "").trim().toLowerCase();
@@ -660,6 +575,12 @@ hackathonRouter.post("/confirm-problem", async (req, res) => {
         message: `Only your Team Lead (${team.lead_name}) can select and confirm the problem statement.`,
       });
     }
+    if (team.problem_statement_id) {
+      return res.status(409).json({
+        message: `Your team has already confirmed ${team.problem_statement_id}. A team can confirm only one problem statement.`,
+      });
+    }
+
     const statement = await ProblemStatement.findOne({
       hackathonId: program._id,
       id: statementId,
@@ -670,17 +591,26 @@ hackathonRouter.post("/confirm-problem", async (req, res) => {
     if (!statement) {
       return res.status(404).json({ message: "Problem statement not found for this Hackathon." });
     }
-    if (statement.proposedByTeam && String(statement.proposedByTeam) !== String(team._id)) {
+    if (statement.proposedByTeam) {
       return res.status(403).json({
         message: "This problem statement was proposed by another team and is reserved for them.",
       });
     }
 
-    const user = await Hackathon.findByIdAndUpdate(
-      team._id,
+    const user = await Hackathon.findOneAndUpdate(
+      {
+        _id: team._id,
+        $or: [{ problem_statement_id: null }, { problem_statement_id: { $exists: false } }],
+      },
       { $set: { problem_statement_id: statementId } },
       { new: true },
     );
+
+    if (!user) {
+      return res.status(409).json({
+        message: "Your team has already confirmed a problem statement. A team can confirm only one.",
+      });
+    }
     await ProblemStatement.deleteMany({
       hackathonId: program._id,
       proposedByTeam: team._id,
@@ -740,7 +670,7 @@ hackathonRouter.post("/problem-proposals", async (req, res) => {
         message: "Your team already has a proposal waiting for admin approval.",
       });
     }
-    if (proposalSlots.limit !== null && proposalSlots.approved >= proposalSlots.limit) {
+    if (proposalSlots.approved >= proposalSlots.limit) {
       return res.status(409).json({
         message: `All ${proposalSlots.limit} slots for team-proposed statements are taken. Please choose from the listed statements.`,
       });
@@ -841,47 +771,25 @@ hackathonRouter.patch("/users/:id/evaluation", requireAdmin, requireCurrentHacka
   }
 });
 
-hackathonRouter.post("/submit", upload.none(), async (req, res) => {
+hackathonRouter.post("/submit", upload.single("ppt"), async (req, res) => {
   try {
-    const deadlineDate = process.env.SUBMISSION_DEADLINE
-      ? new Date(process.env.SUBMISSION_DEADLINE)
-      : new Date("2026-10-04T00:40:00+05:30");
-    const SUBMISSION_DEADLINE_MS = deadlineDate.getTime();
-
-    if (Date.now() > SUBMISSION_DEADLINE_MS) {
-      const formattedDate = deadlineDate.toLocaleString("en-US", {
-        timeZone: "Asia/Kolkata",
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
-      });
-      return res.status(403).json({
-        message: `We are unable to process your upload because the project submission deadline (${formattedDate}) has ended. New submissions are no longer accepted.`,
-      });
-    }
-
-    const { email, phone, github_repo, description, video_url, room_number, other_links, ppt_url, ppt } = req.body;
-    const finalPptUrl = (ppt_url || ppt || "").trim();
+    const { email, phone, github_repo, description, video_url } = req.body;
 
     if (
       !email ||
       !phone ||
       !github_repo?.trim() ||
       !description?.trim() ||
-      !video_url?.trim() ||
-      !room_number?.trim()
+      !video_url?.trim()
     ) {
       return res.status(400).json({
-        message: "Please provide all submission details including Room Number.",
+        message: "Please provide all submission details.",
       });
     }
 
-    if (!finalPptUrl) {
+    if (!req.file) {
       return res.status(400).json({
-        message: "Please provide your presentation (PPT/PDF) link.",
+        message: "Please upload your PPT/PDF file.",
       });
     }
 
@@ -905,6 +813,41 @@ hackathonRouter.post("/submit", upload.none(), async (req, res) => {
       });
     }
 
+    const db = mongoose.connection.db;
+
+    if (!db) {
+      return res.status(500).json({
+        message: "Database connection is not ready.",
+      });
+    }
+
+    const bucket = new mongoose.mongo.GridFSBucket(db, {
+      bucketName: "hackathon_ppts",
+    });
+
+    const fileId = new mongoose.Types.ObjectId();
+
+    const uploadStream = bucket.openUploadStreamWithId(
+      fileId,
+      req.file.originalname,
+      {
+        contentType: req.file.mimetype,
+        metadata: {
+          email,
+          phone,
+        },
+      },
+    );
+
+    uploadStream.end(req.file.buffer);
+
+    await new Promise((resolve, reject) => {
+      uploadStream.on("finish", resolve);
+      uploadStream.on("error", reject);
+    });
+
+    const pptUrl = `/api/hackathon/ppt/${fileId.toString()}`;
+
     const program = await HackathonProgram.findOne({ slug: CURRENT_HACKATHON_SLUG }).select("_id");
     if (!program) return res.status(503).json({ message: "Hackathon is not configured." });
     const user = await Hackathon.findOneAndUpdate(
@@ -914,10 +857,8 @@ hackathonRouter.post("/submit", upload.none(), async (req, res) => {
           submission: {
             github_repo: github_repo.trim(),
             description: description.trim(),
-            ppt_url: finalPptUrl,
+            ppt_url: pptUrl,
             video_url: video_url.trim(),
-            room_number: room_number.trim(),
-            other_links: other_links ? String(other_links).trim() : null,
             submitted_at: new Date(),
           },
         },
@@ -926,6 +867,8 @@ hackathonRouter.post("/submit", upload.none(), async (req, res) => {
     );
 
     if (!user) {
+      await bucket.delete(fileId);
+
       return res.status(404).json({
         message: "Team not found",
       });

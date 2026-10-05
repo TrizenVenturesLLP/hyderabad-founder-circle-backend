@@ -87,6 +87,8 @@ const hackathonSchema = new mongoose.Schema(
     },
     /** Latest evaluation round the team has been selected for. */
     round: { type: Number, default: 1, min: 1 },
+    /** Domain assigned to the team (ui-ux, vibe-coding, agentic-ai, web-dev). */
+    domainId: { type: String, default: null, trim: true },
   },
   { timestamps: true },
 );
