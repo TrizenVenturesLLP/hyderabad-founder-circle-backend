@@ -21,8 +21,10 @@ import {
 import { seedAdminAndEvents } from "./services/seed.js";
 import { ensureRsvpIndexes } from "./services/ensureRsvpIndexes.js";
 import { ensureEvaluationRounds } from "./services/ensureEvaluationRounds.js";
+import { ensureHackathonCertificateIndexes } from "./services/ensureHackathonCertificateIndexes.js";
 import { Event } from "./models/Event.js";
 import hackathonRouter from "./routes/hackathon.js";
+import hackathonCertificatesRouter from "./routes/hackathonCertificates.js";
 import juryRouter from "./routes/jury.js";
 
 const PORT = Number(process.env.PORT) || 80;
@@ -195,6 +197,7 @@ app.use("/api/admin/org-applications", adminOrgApplicationsRouter);
 app.use("/api/admin/analytics", analyticsAdminRouter);
 app.use("/api/org-applications", orgApplicationsRouter);
 app.use("/api/hackathon", hackathonRouter);
+app.use("/api/hackathons", hackathonCertificatesRouter);
 app.use("/api/jury", juryRouter);
 
 async function connectMongoWithRetry() {
@@ -228,6 +231,16 @@ async function connectMongoWithRetry() {
         console.error(
           "[evaluation-rounds] Failed:",
           roundErr instanceof Error ? roundErr.message : roundErr,
+        );
+      }
+      try {
+        await ensureHackathonCertificateIndexes();
+      } catch (certificateIndexError) {
+        console.error(
+          "[hackathon-certificate-indexes] Failed:",
+          certificateIndexError instanceof Error
+            ? certificateIndexError.message
+            : certificateIndexError,
         );
       }
       /*try {

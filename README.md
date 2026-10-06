@@ -44,6 +44,29 @@ API runs at `http://localhost:4000`.
 
 `jobTitle` and `company` are optional. Duplicate email + event slug returns `409`.
 
+## Hackathon participation certificates
+
+The backend packages an unchanged copy of the AI HACK × MRDU participation-certificate PDF at
+`src/assets/participation-certificate-template.pdf`. Override its location with
+`PARTICIPATION_CERTIFICATE_TEMPLATE_PATH` only when deploying a different copy of the same design.
+Puppeteer uses one headless Chrome instance and generates PDFs in memory; generated PDFs are uploaded
+to the private `certificates` MinIO bucket and are not stored on the server.
+
+Admin certificate APIs:
+
+- `POST /api/admin/hackathons/:hackathonId/certificates/generate`
+- `GET /api/admin/hackathons/:hackathonId/certificates`
+- `GET /api/admin/hackathons/:hackathonId/certificates/:participantId/download`
+
+Participant certificate APIs:
+
+- `GET /api/hackathons/:hackathonId/certificate`
+- `GET /api/hackathons/:hackathonId/certificate/download`
+
+The certificate collection creates a unique `{ hackathonId, participantId }` index. Failed
+certificates can be retried from the admin dashboard; participant download URLs are short-lived and
+are issued only after the authenticated account is matched to its own certificate.
+
 ## Security note
 
 Never commit `.env`. If a MongoDB password was shared in chat or committed, rotate it in Atlas.

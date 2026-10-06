@@ -20,7 +20,11 @@ import { HackathonParticipantAccount } from "../models/HackathonParticipantAccou
 import { HackathonJuryEvaluation } from "../models/HackathonJuryEvaluation.js";
 import { findAccountBySetupToken } from "../services/hackathonParticipantAuth.js";
 import { teamRoundOutcome } from "../services/hackathonLeaderboard.js";
-import { isPlatformAdmin, requireAdmin } from "../middleware/auth.js";
+import {
+  isPlatformAdmin,
+  requireAdmin,
+  signHackathonParticipantToken,
+} from "../middleware/auth.js";
 
 /** Includes the Team Lead. */
 const MAX_TEAM_MEMBERS = 6;
@@ -230,7 +234,7 @@ hackathonRouter.post("/login", async (req, res) => {
     const account = await HackathonParticipantAccount.findOne({
       hackathonId: program._id,
       normalizedEmail: email,
-    }).select("passwordHash");
+    }).select("passwordHash hackathonId normalizedEmail");
     if (!account?.passwordHash) {
       return res.status(403).json({
         code: "PASSWORD_NOT_SET",
@@ -247,6 +251,7 @@ hackathonRouter.post("/login", async (req, res) => {
 
     return res.status(200).json({
       message: "Login is successful",
+      token: signHackathonParticipantToken(account),
       team,
       profile: participantProfile(team, email),
     });

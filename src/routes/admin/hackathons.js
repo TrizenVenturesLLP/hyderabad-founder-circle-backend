@@ -6,6 +6,7 @@ import { HackathonJuryInvitation } from "../../models/HackathonJuryInvitation.js
 import { HackathonJuryMembership } from "../../models/HackathonJuryMembership.js";
 import { HackathonJuryEvaluation } from "../../models/HackathonJuryEvaluation.js";
 import { Hackathon } from "../../models/Hackathon.js";
+import { HackathonCertificate } from "../../models/HackathonCertificate.js";
 import {
   ProblemStatement,
   TEAM_PROPOSAL_LIMIT,
@@ -14,6 +15,11 @@ import {
 import { JuryUser } from "../../models/JuryUser.js";
 import { isPlatformAdmin, requireAdmin } from "../../middleware/auth.js";
 import { sendHackathonJuryInvitation } from "../../services/emailNotification.js";
+import { getPrivateObjectUrl } from "../../lib/minio.js";
+import {
+  getCertificateOverview,
+  startCertificateGeneration,
+} from "../../services/hackathonCertificates.js";
 import {
   buildHackathonLeaderboard,
   juryWorkload,
@@ -30,6 +36,61 @@ const JURY_WEB_APP_URL =
   process.env.JURY_WEB_APP_URL || "https://community.trizenventures.com";
 
 router.use(requireAdmin);
+
+router.post("/:hackathonId/certificates/generate", async (req, res) => {
+  try {
+    const program = await loadAuthorizedProgram(req, res);
+    if (!program) return;
+    const result = await startCertificateGeneration(program, {
+      retryFailed: req.body?.retryFailed === true,
+    });
+    return res.status(202).json({ ok: true, ...result });
+  } catch (error) {
+    console.error("[admin/hackathons certificate generation]", error);
+    return res.status(500).json({ error: "Could not start certificate generation." });
+  }
+});
+
+router.get("/:hackathonId/certificates", async (req, res) => {
+  try {
+    const program = await loadAuthorizedProgram(req, res);
+    if (!program) return;
+    return res.json(await getCertificateOverview(program));
+  } catch (error) {
+    console.error("[admin/hackathons certificates]", error);
+    return res.status(500).json({ error: "Could not load Hackathon certificates." });
+  }
+});
+
+router.get("/:hackathonId/certificates/:participantId/download", async (req, res) => {
+  try {
+    const program = await loadAuthorizedProgram(req, res);
+    if (!program) return;
+    if (!mongoose.Types.ObjectId.isValid(req.params.participantId)) {
+      return res.status(400).json({ error: "Invalid participant." });
+    }
+    const certificate = await HackathonCertificate.findOne({
+      hackathonId: program._id,
+      participantId: req.params.participantId,
+      status: "generated",
+    })
+      .select("bucket objectKey")
+      .lean();
+    if (!certificate) {
+      return res.status(404).json({ error: "Generated certificate not found." });
+    }
+
+    const disposition = req.query.download === "1" ? "attachment" : "inline";
+    const url = await getPrivateObjectUrl(certificate.bucket, certificate.objectKey, {
+      expirySeconds: 15 * 60,
+      disposition,
+    });
+    return res.json({ url, expiresIn: 15 * 60 });
+  } catch (error) {
+    console.error("[admin/hackathons certificate download]", error);
+    return res.status(500).json({ error: "Could not create a certificate link." });
+  }
+});
 
 router.get("/:hackathonId/problem-statements", async (req, res) => {
   try {

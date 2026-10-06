@@ -26,6 +26,7 @@ export const TRANSACTION_PROOF_BUCKET = (
 export const QR_PAYMENT_BUCKET = (
   process.env.MINIO_QR_PAYMENT_BUCKET_NAME || "qr-image"
 ).toLowerCase();
+export const CERTIFICATES_BUCKET = "certificates";
 
 const ensuredBuckets = new Set();
 
@@ -60,6 +61,30 @@ export async function getPrivateImageUrl(bucket, objectName, expirySeconds = 900
   if (!objectName) return "";
   await ensureBucket(bucket);
   return client.presignedGetObject(bucket, objectName, expirySeconds);
+}
+
+export async function uploadPrivatePdf({ bucket, objectName, buffer }) {
+  await ensureBucket(bucket);
+  await client.putObject(bucket, objectName, buffer, buffer.length, {
+    "Content-Type": "application/pdf",
+    "Cache-Control": "private, no-store",
+  });
+}
+
+export async function getPrivateObjectUrl(
+  bucket,
+  objectName,
+  { expirySeconds = 900, disposition = "inline" } = {},
+) {
+  if (!objectName) return "";
+  if (!["inline", "attachment"].includes(disposition)) {
+    throw new Error("Invalid object disposition.");
+  }
+  await ensureBucket(bucket);
+  return client.presignedGetObject(bucket, objectName, expirySeconds, {
+    "response-content-disposition": `${disposition}; filename="participation-certificate.pdf"`,
+    "response-content-type": "application/pdf",
+  });
 }
 
 export async function getImageObject(bucket, objectName) {

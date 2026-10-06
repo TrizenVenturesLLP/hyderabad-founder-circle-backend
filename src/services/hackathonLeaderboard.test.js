@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { evaluateRoundTeamsForCutoff } from "./hackathonLeaderboard.js";
+import { evaluateRoundTeamsForCutoff, teamRoundOutcome } from "./hackathonLeaderboard.js";
 
 test("evaluateRoundTeamsForCutoff marks only scored teams and respects the cutoff", () => {
   const program = {
@@ -27,4 +27,25 @@ test("evaluateRoundTeamsForCutoff marks only scored teams and respects the cutof
   assert.deepEqual(result.qualifiedTeamIds, ["team-a"]);
   assert.equal(result.qualifiedCount, 1);
   assert.equal(result.disqualifiedCount, 1);
+});
+
+test("teamRoundOutcome keeps final-round non-qualifiers as disqualified when results are decided", () => {
+  const program = {
+    roundResults: [
+      {
+        round: 2,
+        cutoff: 75,
+        evaluatedTeamIds: ["team-a", "team-b"],
+        qualifiedTeamIds: ["team-a"],
+        qualifiedCount: 1,
+        disqualifiedCount: 1,
+        publishedAt: new Date("2026-10-04T00:00:00Z"),
+      },
+    ],
+  };
+
+  const team = { _id: "team-b", round: 2, problem_statement_id: "PS-1" };
+  const outcome = teamRoundOutcome(program, team, { publishedOnly: true });
+
+  assert.deepEqual(outcome, { round: 2, status: "disqualified", nextRound: null });
 });

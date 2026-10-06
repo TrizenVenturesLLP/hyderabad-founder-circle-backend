@@ -96,7 +96,14 @@ export function teamRoundOutcome(program, team, { publishedOnly = false } = {}) 
   if (!decided) return null;
   if (Array.isArray(decided.evaluatedTeamIds)) {
     if (!team?.problem_statement_id) return null;
-    if (!decided.evaluatedTeamIds.some((id) => String(id) === teamId)) {
+    const isEvaluated = decided.evaluatedTeamIds.some((id) => String(id) === teamId);
+    if (!isEvaluated) {
+      // Final-round decisions are definitive. A team that is still active in the
+      // round but not listed as qualified should remain disqualified instead of
+      // showing as pending when the result has already been decided.
+      if (decided.round >= MAX_EVALUATION_ROUNDS && teamRound(team) >= MAX_EVALUATION_ROUNDS) {
+        return { round: decided.round, status: "disqualified", nextRound: null };
+      }
       return { round: decided.round, status: "pending", nextRound: null };
     }
     const qualified = (decided.qualifiedTeamIds || []).some((id) => String(id) === teamId);
@@ -275,6 +282,12 @@ export async function buildHackathonLeaderboard(programId, round = 1) {
     const qualifiedByAdmin = manuallyTracked
       ? (decision.qualifiedTeamIds || []).some((id) => String(id) === teamId)
       : fallbackScore >= FINAL_ROUND_CUTOFF;
+    const finalRoundFinalizedDisqualification =
+      round === MAX_EVALUATION_ROUNDS &&
+      Array.isArray(decision?.evaluatedTeamIds) &&
+      !evaluatedByAdmin &&
+      !qualifiedByAdmin &&
+      teamRound(team) >= MAX_EVALUATION_ROUNDS;
     return {
       teamId,
       teamName: team.team_name,
@@ -295,7 +308,9 @@ export async function buildHackathonLeaderboard(programId, round = 1) {
         ? !statement
           ? null
           : !evaluatedByAdmin
-            ? "pending"
+            ? finalRoundFinalizedDisqualification
+              ? "disqualified"
+              : "pending"
             : qualifiedByAdmin
               ? "qualified"
               : "disqualified"

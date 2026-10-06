@@ -596,6 +596,44 @@ async function deliverHackathonEmail(rendered, logTag) {
   }
 }
 
+export async function sendHackathonParticipationCertificateEmail({
+  email,
+  name,
+  certificateLink,
+}) {
+  const recipient = String(email || "").trim().toLowerCase();
+  const participantName = String(name || "").trim();
+  const link = String(certificateLink || "").trim();
+  if (!/^\S+@\S+\.\S+$/.test(recipient) || !participantName || !link) {
+    throw new Error("A valid participant email, name, and certificate link are required.");
+  }
+
+  const escapeHtml = (value) =>
+    value.replace(
+      /[&<>"']/g,
+      (character) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[character],
+    );
+  const safeName = escapeHtml(participantName);
+  const safeLink = escapeHtml(link);
+  const subject = "Your Participation Certificate – AI HACK X MRDU 2K26";
+  const text = `Dear ${participantName},\n\nThank you for participating in AI HACK X MRDU 2K26, a 24-hour hackathon organized in collaboration with Trizen Community and held at Malla Reddy (MR) Deemed to be University, Hyderabad.\n\nWe are pleased to share your Certificate of Participation in recognition of your participation in the hackathon.\n\nYour certificate:\n${link}\n\nWe appreciate your enthusiasm, creativity, and effort throughout the hackathon. We hope this experience was valuable and inspiring for your future projects and career.\n\nBest regards,\nTeam Trizen Community\nAI HACK X MRDU 2K26\nTrizen Ventures`;
+  const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#f5f6fa;font-family:Arial,Helvetica,sans-serif;color:#20243a"><div style="max-width:640px;margin:0 auto;padding:32px;background:#fff;border:1px solid #e6e8ef"><p>Dear <strong>${safeName}</strong>,</p><p>Thank you for participating in <strong>AI HACK X MRDU 2K26</strong>, a 24-hour hackathon organized in collaboration with <strong>Trizen Community</strong> and held at <strong>Malla Reddy (MR) Deemed to be University, Hyderabad</strong>.</p><p>We are pleased to share your <strong>Certificate of Participation</strong> in recognition of your participation in the hackathon.</p><p><strong>Your certificate:</strong><br><a href="${safeLink}">View / download your certificate</a></p><p>We appreciate your enthusiasm, creativity, and effort throughout the hackathon. We hope this experience was valuable and inspiring for your future projects and career.</p><p>Best regards,<br><strong>Team Trizen Community</strong><br>AI HACK X MRDU 2K26<br>Trizen Ventures</p></div></body></html>`;
+
+  const sent = await deliverHackathonEmail(
+    { to: recipient, name: participantName, subject, text, html },
+    "hackathon-participation-certificate",
+  );
+  if (!sent) throw new Error("The configured email service did not accept the certificate email.");
+  return true;
+}
+
 export async function sendHackathonRegistrationConfirmation({ team }) {
   const email = String(team?.email || "").trim().toLowerCase();
   try {
