@@ -67,6 +67,18 @@ The certificate collection creates a unique `{ hackathonId, participantId }` ind
 certificates can be retried from the admin dashboard; participant download URLs are short-lived and
 are issued only after the authenticated account is matched to its own certificate.
 
+## Round-2 selection certificates
+
+The supplied `public/certificates/Elegant AI Hackathon Selection Certificate.png` design is bundled
+as `src/assets/second-round-selection-certificate.png`. The `certificates:generate-round-2` command
+creates an individual PDF for each member (including team leads) on teams listed as disqualified in
+the published round-2 decision. It is idempotent, uses bounded Puppeteer concurrency, records failed
+attempts for retry, and uploads private PDFs under `{hackathonSlug}/round-2/{participantId}.pdf`.
+
+The admin Registered Teams page exposes a short-lived view link only for members with a generated
+round-2 selection certificate. The round-2 certificate collection has a unique
+`{ hackathonId, participantId, round }` index.
+
 ## Security note
 
 Never commit `.env`. If a MongoDB password was shared in chat or committed, rotate it in Atlas.

@@ -634,6 +634,52 @@ export async function sendHackathonParticipationCertificateEmail({
   return true;
 }
 
+export async function sendHackathonRound2SelectionCertificateEmail({
+  email,
+  name,
+  certificateLink,
+  dashboardLink,
+}) {
+  const recipient = String(email || "").trim().toLowerCase();
+  const participantName = String(name || "").trim();
+  const link = String(certificateLink || "").trim();
+  const permanentLink = String(dashboardLink || "").trim();
+  if (
+    !/^\S+@\S+\.\S+$/.test(recipient) ||
+    !participantName ||
+    !/^https:\/\//i.test(link) ||
+    !/^https:\/\//i.test(permanentLink)
+  ) {
+    throw new Error("A valid participant email, name, and certificate links are required.");
+  }
+
+  const escapeHtml = (value) =>
+    value.replace(
+      /[&<>"']/g,
+      (character) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[character],
+    );
+  const safeName = escapeHtml(participantName);
+  const safeLink = escapeHtml(link);
+  const safeDashboardLink = escapeHtml(permanentLink);
+  const subject = "Round 2 Selection Certificate – AI HACK × MRDU 2K26";
+  const text = `Dear ${participantName},\n\nCongratulations once again on being selected for the Second Round of AI HACK × MRDU 2K26!\n\nWe are pleased to share your Second Round Selection Certificate in recognition of your achievement in the hackathon organized by Trizen Community in collaboration with Malla Reddy (MR) Deemed to be University, Hyderabad.\n\nYour Certificate (direct link valid for 7 days):\n${link}\n\nFor permanent access, sign in and visit your Certificate dashboard:\n${permanentLink}\n\nThank you for your participation, effort, and enthusiasm throughout the hackathon. We wish you continued success in your future endeavors.\n\nBest regards,\nTeam Trizen Community\nAI HACK × MRDU 2K26\nTrizen Ventures`;
+  const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#f5f6fa;font-family:Arial,Helvetica,sans-serif;color:#20243a"><div style="max-width:640px;margin:0 auto;padding:32px;background:#fff;border:1px solid #e6e8ef"><p>Dear <strong>${safeName}</strong>,</p><p>Congratulations once again on being <strong>selected for the Second Round of AI HACK × MRDU 2K26</strong>! 🎉</p><p>We are pleased to share your <strong>Second Round Selection Certificate</strong> in recognition of your achievement in the hackathon organized by <strong>Trizen Community</strong> in collaboration with <strong>Malla Reddy (MR) Deemed to be University, Hyderabad</strong>.</p><p><strong>Your Certificate:</strong><br><a href="${safeLink}">View / Download your Certificate</a><br><span style="font-size:13px;color:#60657a">This direct link is valid for 7 days.</span></p><p>For permanent access, sign in and visit your <a href="${safeDashboardLink}">Certificate dashboard</a>.</p><p>Thank you for your participation, effort, and enthusiasm throughout the hackathon. We wish you continued success in your future endeavors.</p><p>Best regards,<br><strong>Team Trizen Community</strong><br>AI HACK × MRDU 2K26<br>Trizen Ventures</p></div></body></html>`;
+
+  const sent = await deliverHackathonEmail(
+    { to: recipient, name: participantName, subject, text, html },
+    "hackathon-round-2-selection-certificate",
+  );
+  if (!sent) throw new Error("The configured email service did not accept the certificate email.");
+  return true;
+}
+
 export async function sendHackathonRegistrationConfirmation({ team }) {
   const email = String(team?.email || "").trim().toLowerCase();
   try {

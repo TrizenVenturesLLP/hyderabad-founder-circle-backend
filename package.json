@@ -7,7 +7,9 @@
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "test": "node --test src/services/*.test.js",
-    "certificates:generate": "node src/scripts/generateHackathonCertificates.js"
+    "certificates:generate": "node src/scripts/generateHackathonCertificates.js",
+    "certificates:generate-round-2": "node src/scripts/generateRound2SelectionCertificates.js",
+    "certificates:email-round-2": "node src/scripts/sendRound2CertificateEmails.js"
   },
   "engines": {
     "node": ">=20"

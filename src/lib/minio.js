@@ -64,7 +64,9 @@ export async function getPrivateImageUrl(bucket, objectName, expirySeconds = 900
 }
 
 export async function uploadPrivatePdf({ bucket, objectName, buffer }) {
-  await ensureBucket(bucket);
+  if (bucket !== CERTIFICATES_BUCKET) {
+    await ensureBucket(bucket);
+  }
   await client.putObject(bucket, objectName, buffer, buffer.length, {
     "Content-Type": "application/pdf",
     "Cache-Control": "private, no-store",
@@ -80,7 +82,9 @@ export async function getPrivateObjectUrl(
   if (!["inline", "attachment"].includes(disposition)) {
     throw new Error("Invalid object disposition.");
   }
-  await ensureBucket(bucket);
+  if (bucket !== CERTIFICATES_BUCKET) {
+    await ensureBucket(bucket);
+  }
   return client.presignedGetObject(bucket, objectName, expirySeconds, {
     "response-content-disposition": `${disposition}; filename="participation-certificate.pdf"`,
     "response-content-type": "application/pdf",

@@ -7,6 +7,7 @@ import { HackathonJuryMembership } from "../../models/HackathonJuryMembership.js
 import { HackathonJuryEvaluation } from "../../models/HackathonJuryEvaluation.js";
 import { Hackathon } from "../../models/Hackathon.js";
 import { HackathonCertificate } from "../../models/HackathonCertificate.js";
+import { HackathonRoundCertificate } from "../../models/HackathonRoundCertificate.js";
 import {
   ProblemStatement,
   TEAM_PROPOSAL_LIMIT,
@@ -20,6 +21,10 @@ import {
   getCertificateOverview,
   startCertificateGeneration,
 } from "../../services/hackathonCertificates.js";
+import {
+  getRound2CertificateOverview,
+  getRound2DisqualifiedParticipants,
+} from "../../services/hackathonRound2Certificates.js";
 import {
   buildHackathonLeaderboard,
   juryWorkload,
@@ -59,6 +64,57 @@ router.get("/:hackathonId/certificates", async (req, res) => {
   } catch (error) {
     console.error("[admin/hackathons certificates]", error);
     return res.status(500).json({ error: "Could not load Hackathon certificates." });
+  }
+});
+
+router.get("/:hackathonId/round-2-certificates", async (req, res) => {
+  try {
+    const program = await loadAuthorizedProgram(req, res);
+    if (!program) return;
+    return res.json(await getRound2CertificateOverview(program));
+  } catch (error) {
+    console.error("[admin/hackathons round-2 certificates]", error);
+    return res.status(500).json({ error: "Could not load second-round certificates." });
+  }
+});
+
+router.get("/:hackathonId/round-2-certificates/:participantId/download", async (req, res) => {
+  try {
+    const program = await loadAuthorizedProgram(req, res);
+    if (!program) return;
+    if (!mongoose.Types.ObjectId.isValid(req.params.participantId)) {
+      return res.status(400).json({ error: "Invalid participant." });
+    }
+
+    const participants = await getRound2DisqualifiedParticipants(program);
+    const participant = participants.find(
+      (item) => String(item.participantId) === req.params.participantId,
+    );
+    if (!participant) {
+      return res.status(404).json({ error: "Round-2 selection certificate not found." });
+    }
+    const certificate = await HackathonRoundCertificate.findOne({
+      hackathonId: program._id,
+      participantId: participant.participantId,
+      teamId: participant.teamId,
+      round: 2,
+      status: "generated",
+    })
+      .select("bucket objectKey")
+      .lean();
+    if (!certificate) {
+      return res.status(404).json({ error: "Generated round-2 certificate not found." });
+    }
+
+    const disposition = req.query.download === "1" ? "attachment" : "inline";
+    const url = await getPrivateObjectUrl(certificate.bucket, certificate.objectKey, {
+      expirySeconds: 15 * 60,
+      disposition,
+    });
+    return res.json({ url, expiresIn: 15 * 60 });
+  } catch (error) {
+    console.error("[admin/hackathons round-2 certificate download]", error);
+    return res.status(500).json({ error: "Could not create a second-round certificate link." });
   }
 });
 
