@@ -8,6 +8,7 @@ import { HackathonJuryEvaluation } from "../../models/HackathonJuryEvaluation.js
 import { Hackathon } from "../../models/Hackathon.js";
 import { HackathonCertificate } from "../../models/HackathonCertificate.js";
 import { HackathonRoundCertificate } from "../../models/HackathonRoundCertificate.js";
+import { HackathonWinnerCertificate } from "../../models/HackathonWinnerCertificate.js";
 import {
   ProblemStatement,
   TEAM_PROPOSAL_LIMIT,
@@ -25,6 +26,7 @@ import {
   getRound2CertificateOverview,
   getRound2DisqualifiedParticipants,
 } from "../../services/hackathonRound2Certificates.js";
+import { getHackathonWinnerCertificateOverview } from "../../services/hackathonWinnerCertificates.js";
 import {
   buildHackathonLeaderboard,
   juryWorkload,
@@ -115,6 +117,47 @@ router.get("/:hackathonId/round-2-certificates/:participantId/download", async (
   } catch (error) {
     console.error("[admin/hackathons round-2 certificate download]", error);
     return res.status(500).json({ error: "Could not create a second-round certificate link." });
+  }
+});
+
+router.get("/:hackathonId/winner-certificates", async (req, res) => {
+  try {
+    const program = await loadAuthorizedProgram(req, res);
+    if (!program) return;
+    return res.json(await getHackathonWinnerCertificateOverview(program));
+  } catch (error) {
+    console.error("[admin/hackathons winner certificates]", error);
+    return res.status(500).json({ error: "Could not load winner certificates." });
+  }
+});
+
+router.get("/:hackathonId/winner-certificates/:teamId/download", async (req, res) => {
+  try {
+    const program = await loadAuthorizedProgram(req, res);
+    if (!program) return;
+    if (!mongoose.Types.ObjectId.isValid(req.params.teamId)) {
+      return res.status(400).json({ error: "Invalid team." });
+    }
+    const certificate = await HackathonWinnerCertificate.findOne({
+      hackathonId: program._id,
+      teamId: req.params.teamId,
+      status: "generated",
+    })
+      .select("bucket objectKey")
+      .lean();
+    if (!certificate) {
+      return res.status(404).json({ error: "Generated winner certificate not found." });
+    }
+
+    const disposition = req.query.download === "1" ? "attachment" : "inline";
+    const url = await getPrivateObjectUrl(certificate.bucket, certificate.objectKey, {
+      expirySeconds: 15 * 60,
+      disposition,
+    });
+    return res.json({ url, expiresIn: 15 * 60 });
+  } catch (error) {
+    console.error("[admin/hackathons winner certificate download]", error);
+    return res.status(500).json({ error: "Could not create a winner certificate link." });
   }
 });
 

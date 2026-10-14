@@ -79,6 +79,24 @@ The admin Registered Teams page exposes a short-lived view link only for members
 round-2 selection certificate. The round-2 certificate collection has a unique
 `{ hackathonId, participantId, round }` index.
 
+## Hackathon winner certificates
+
+`certificates:generate-winners` creates one PDF for each of the twelve configured round-2 winning
+teams, using the rank-specific templates in `src/assets/winner-certificates/` (`1st.png`,
+`2nd.png`, and `3rd.png`). The team name and domain are printed on the certificate; each PDF is
+stored once in the private `certificates` bucket under
+`{hackathonSlug}/winners/{teamId}.pdf` and shared by all members of that team. Generation requires
+the listed teams to exist in the published round-2 qualified results.
+The admin Registered Teams page shows a view link for each member only after that team's PDF has
+been generated.
+Pass additional registered team IDs after the Hackathon slug to generate explicitly requested
+additional team certificates using each team's registered problem-statement domain:
+`npm run certificates:generate-winners -- ai-hack-x-mrdu-2026 <teamId>`.
+These additional unranked certificates continue to use the generic
+`src/assets/winner-certificate-template.png` artwork.
+Add `--refresh` to regenerate certificates that are already marked generated after updating the
+template or layout. Ranked winners see their placement on the participant Certificate dashboard.
+
 ## Security note
 
 Never commit `.env`. If a MongoDB password was shared in chat or committed, rotate it in Atlas.
